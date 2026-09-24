@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "mapleai": {
+      "command": "npm",
+      "args": ["--silent", "run", "--prefix", "/absolute/path/to/api_sell_2", "mcp"],
+      "env": {
+        "EVM_PRIVATE_KEY": "0xYOUR_PRIVATE_KEY",
+        "MCP_PAY_TO_POLYGON": "0x63db6eaf635a31bbc6714fe37bdc85243864f611",
+        "MCP_MAX_PAYMENT_USDC": "0.10"
+      }
+    }
+  }
+}
