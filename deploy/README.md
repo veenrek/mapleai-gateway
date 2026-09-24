@@ -39,3 +39,13 @@ gas-price buffer. The estimate is cached for three seconds. If the RPC
 cannot supply a quote, the paid request fails closed. An old signed quote
 remains valid when the new estimate falls, provided it still covers the
 current model price and gas estimate; a higher estimate requires a new 402.
+
+## Polygon gateway
+
+The Polygon mainnet gateway runs on port 4024 at https://polygon.mapleai.shop.
+It uses eip155:137, Circle's native USDC contract
+0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359, the same EVM payTo as
+Base, and the PayAI facilitator. Deploy with the systemd unit and setup script
+in this directory. The Apache virtual hosts proxy to port 4024 and the HTTPS
+host forwards X-Forwarded-Proto: https. PayAI reports exact v2 support for
+eip155:137; an actual verify and settle still needs a funded Polygon payer.

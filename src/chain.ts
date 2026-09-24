@@ -26,6 +26,7 @@ const SOLANA_DEVNET_USDC = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
 const BASE_MAINNET_USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const BASE_SEPOLIA_USDC = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
 const ARC_MAINNET_USDC = "0x3600000000000000000000000000000000000000";
+const POLYGON_MAINNET_USDC = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359";
 
 /** CAIP-2 ids for the networks this gateway is deployed on. */
 const SOLANA_MAINNET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
@@ -33,6 +34,7 @@ const SOLANA_DEVNET = "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1";
 const BASE_MAINNET = "eip155:8453";
 const BASE_SEPOLIA = "eip155:84532";
 const ARC_MAINNET = "eip155:5042";
+const POLYGON_MAINNET = "eip155:137";
 const ROBINHOOD_MAINNET = "eip155:4663";
 
 export function chainInfo(network: string, paymentAssetAddress?: string): ChainInfo {
@@ -65,6 +67,16 @@ export function chainInfo(network: string, paymentAssetAddress?: string): ChainI
       assetAddress: ARC_MAINNET_USDC,
       explorer: "https://explorer.arc.io",
       networkName: "Arc mainnet",
+      testnet: false,
+    };
+  }
+  if (network === POLYGON_MAINNET) {
+    return {
+      label: "Polygon",
+      asset: "USDC",
+      assetAddress: POLYGON_MAINNET_USDC,
+      explorer: "https://polygonscan.com",
+      networkName: "Polygon mainnet",
       testnet: false,
     };
   }
