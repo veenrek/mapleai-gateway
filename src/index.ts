@@ -16,6 +16,7 @@ import { canonicalModelId, upstreamModelId } from "./models.js";
 import { estimateOutputTokens, quotePrice, quoteBreakdown } from "./pricing.js";
 import { paymentOverheadUsd } from "./gas.js";
 import { actualCostUsd, extractPayer, parseUsage, parseUsageFromSse, recordUsage } from "./ledger.js";
+import { paymentEventMiddleware } from "./payment-events.js";
 import {
   toChatRequest,
   toResponsesObject,
@@ -32,6 +33,7 @@ const app = express();
 app.disable("x-powered-by");
 app.set("trust proxy", true);
 app.use(express.json({ limit: "10mb" }));
+app.use(paymentEventMiddleware);
 
 // ---------------------------------------------------------------------------
 // x402 resource server

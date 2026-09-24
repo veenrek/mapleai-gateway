@@ -5,6 +5,7 @@ packages/mapleai-mcp/*.tgz
 .env
 *.log
 ledger.jsonl
+payment-events.jsonl
 nexocap/cfg/
 nexocap/
 tools/key-test.sh

@@ -49,3 +49,23 @@ Base, and the PayAI facilitator. Deploy with the systemd unit and setup script
 in this directory. The Apache virtual hosts proxy to port 4024 and the HTTPS
 host forwards X-Forwarded-Proto: https. PayAI reports exact v2 support for
 eip155:137; an actual verify and settle still needs a funded Polygon payer.
+
+## Payment accounting
+
+Each gateway appends paid-route events to `payment-events.jsonl` in its
+working directory (or `PAYMENT_EVENTS_FILE`). Event kinds include
+`payment_challenge`, `payment_rejected`, `request_failed`,
+`settlement_unconfirmed` and `settled`. Only `settled` events with a
+successful `PAYMENT-RESPONSE`, transaction hash and validated signed amount
+count as revenue. Amounts are stored in atomic USDC units. The existing
+`ledger.jsonl` is for upstream usage and quoted prices, not confirmed income.
+The log stores no prompt text or payment signature.
+
+Summarize one or more network logs with:
+
+```sh
+node tools/payment-report.mjs /opt/claude-api-*/payment-events.jsonl
+```
+
+The report deduplicates settled transaction hashes per network. Historical
+ledger entries have no settlement receipt and are excluded from revenue.
