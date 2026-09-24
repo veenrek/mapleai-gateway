@@ -3,6 +3,7 @@ import { paymentMiddleware, x402ResourceServer } from "@x402/express";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { ExactSvmScheme } from "@x402/svm/exact/server";
 import { HTTPFacilitatorClient, type HTTPRequestContext } from "@x402/core/server";
+import { bazaarResourceServerExtension, declareDiscoveryExtension } from "@x402/extensions/bazaar";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
@@ -39,6 +40,7 @@ const resourceServer = new x402ResourceServer(facilitator).register(
   config.network,
   config.network.startsWith("solana:") ? new ExactSvmScheme() : new ExactEvmScheme(),
 );
+resourceServer.registerExtension(bazaarResourceServerExtension);
 
 /** Parsed request body (express.json() runs first, and the paywall needs it to price). */
 function requestBody(context: HTTPRequestContext): Record<string, unknown> {
@@ -79,8 +81,66 @@ resourceServer.registerExtension({
 
 const CATALOG_SUMMARY = () => `${catalog().length} GPT models, OpenAI-compatible`;
 
-/** Every paid route shares one pricing rule; only the description differs. */
-function paidRoute(description: string) {
+const chatDiscovery = declareDiscoveryExtension({
+  input: {
+    model: "openai/gpt-6-luna",
+    messages: [{ role: "user", content: "Hello" }],
+    max_tokens: 64,
+  },
+  inputSchema: {
+    type: "object",
+    required: ["model", "messages"],
+    properties: {
+      model: { type: "string", description: "Model ID from GET /v1/models" },
+      messages: {
+        type: "array",
+        items: {
+          type: "object",
+          required: ["role", "content"],
+          properties: {
+            role: { type: "string", enum: ["system", "user", "assistant", "tool"] },
+            content: { type: "string" },
+          },
+        },
+      },
+      max_tokens: { type: "integer", minimum: 1 },
+    },
+  },
+  bodyType: "json",
+  output: {
+    example: {
+      id: "chatcmpl_example",
+      object: "chat.completion",
+      choices: [{ index: 0, message: { role: "assistant", content: "Hello!" }, finish_reason: "stop" }],
+    },
+  },
+});
+
+const responsesDiscovery = declareDiscoveryExtension({
+  input: { model: "openai/gpt-6-luna", input: "Hello", max_output_tokens: 64 },
+  inputSchema: {
+    type: "object",
+    required: ["model", "input"],
+    properties: {
+      model: { type: "string", description: "Model ID from GET /v1/models" },
+      input: { type: "string" },
+      max_output_tokens: { type: "integer", minimum: 1 },
+    },
+  },
+  bodyType: "json",
+  output: {
+    example: {
+      id: "resp_example",
+      object: "response",
+      status: "completed",
+      output_text: "Hello!",
+      output: [],
+    },
+  },
+});
+
+/** Every paid route shares one pricing rule; only the discovery shape differs. */
+function paidRoute(description: string, discovery: ReturnType<typeof declareDiscoveryExtension>) {
   return {
     accepts: {
       scheme: "exact",
@@ -91,7 +151,7 @@ function paidRoute(description: string) {
     },
     description,
     mimeType: "application/json",
-    extensions: { quote: {} },
+    extensions: { quote: {}, ...discovery },
   };
 }
 
@@ -99,13 +159,15 @@ const CHAT_DESCRIPTION =
   "OpenAI-compatible chat completion, priced by counted input tokens + max output tokens at per-model rates";
 
 const PAID_ROUTES = {
-  "POST /v1/chat/completions": paidRoute(CHAT_DESCRIPTION),
-  "POST /api/v1/chat/completions": paidRoute(CHAT_DESCRIPTION),
+  "POST /v1/chat/completions": paidRoute(CHAT_DESCRIPTION, chatDiscovery),
+  "POST /api/v1/chat/completions": paidRoute(CHAT_DESCRIPTION, chatDiscovery),
   "POST /api/v1/responses": paidRoute(
     "OpenAI-compatible Responses API (alpha), translated to chat completions upstream",
+    responsesDiscovery,
   ),
   "POST /v1/responses": paidRoute(
     "OpenAI-compatible Responses API (alpha), translated to chat completions upstream",
+    responsesDiscovery,
   ),
 };
 
