@@ -516,12 +516,25 @@ app.get("/openapi.json", (req: Request, res: Response) => {
     })),
   };
 
+  // Keep the discovery range tied to the live catalog and pricing settings.
+  // This is the largest quote for a full context window plus the model's
+  // advertised maximum output; individual requests are usually much smaller.
+  const maxCatalogQuote = Math.max(
+    ...models.map(
+      (model) =>
+        ((model.contextWindow * model.pricing.input + model.maxOutput * model.pricing.output) / 1_000_000) *
+          config.priceMarkup +
+        config.facilitatorFeeUsd,
+    ),
+    config.minChargeUsd,
+  );
+
   const paymentInfo = {
     price: {
       mode: "dynamic",
       currency: "USD",
       min: config.minChargeUsd.toFixed(6),
-      max: "1000",
+      max: maxCatalogQuote.toFixed(6),
     },
     protocols: [{ x402: {} }],
   };
