@@ -14,6 +14,7 @@ import { catalog, compactTokens, maxContextWindow, minInputPrice, money } from "
 import { chainInfo } from "./chain.js";
 import { canonicalModelId, upstreamModelId } from "./models.js";
 import { estimateOutputTokens, quotePrice, quoteBreakdown } from "./pricing.js";
+import { paymentOverheadUsd } from "./gas.js";
 import { actualCostUsd, extractPayer, parseUsage, parseUsageFromSse, recordUsage } from "./ledger.js";
 import {
   toChatRequest,
@@ -69,7 +70,27 @@ function requestBody(context: HTTPRequestContext): Record<string, unknown> {
   return (body ?? {}) as Record<string, unknown>;
 }
 
-const quotedPrice: DynamicPrice = (context) => quotePrice(requestBody(context) as never);
+const quotedPrice: DynamicPrice = async (context) => {
+  const current = await quotePrice(requestBody(context) as never);
+  if (config.network !== "eip155:5042" || !context.paymentHeader) return current;
+  try {
+    const signed = JSON.parse(Buffer.from(context.paymentHeader, "base64").toString("utf8"));
+    const accepted = signed?.accepted;
+    if (signed?.x402Version !== 2 || accepted?.network !== config.network ||
+        accepted?.scheme !== "exact" ||
+        accepted?.asset?.toLowerCase() !== chain.assetAddress.toLowerCase() ||
+        accepted?.payTo?.toLowerCase() !== config.payTo.toLowerCase() ||
+        typeof accepted?.amount !== "string" || !/^[1-9][0-9]*$/.test(accepted.amount)) {
+      return current;
+    }
+    const paid = BigInt(accepted.amount);
+    const minimum = BigInt(Math.round(Number(current.slice(1)) * 1_000_000));
+    if (paid < minimum) return current;
+    return "$" + (Number(paid) / 1_000_000).toFixed(6);
+  } catch {
+    return current;
+  }
+};
 
 /**
  * `quote` extension: BlockRun-style transparency in every 402 — the challenge
@@ -78,11 +99,11 @@ const quotedPrice: DynamicPrice = (context) => quotePrice(requestBody(context) a
  */
 resourceServer.registerExtension({
   key: "quote",
-  dynamicInfoFields: ["inputTokens", "outputTokens", "price"],
+  dynamicInfoFields: ["inputTokens", "outputTokens", "price", "paymentOverheadUsd"],
   async enrichPaymentRequiredResponse(_declaration, context) {
     const transport = context.transportContext as { request?: HTTPRequestContext } | undefined;
     const body = transport?.request ? requestBody(transport.request) : {};
-    const quote = quoteBreakdown(body as { model?: string });
+    const quote = await quoteBreakdown(body as { model?: string });
 
     for (const accept of context.paymentRequiredResponse.accepts) {
       accept.extra = {
@@ -273,7 +294,7 @@ async function handleChatCompletions(req: Request, res: Response): Promise<void>
   };
 
   const payer = extractPayer(req.headers["payment-signature"] as string | undefined);
-  const quotedUsd = quotePrice(req.body);
+  const quotedUsd = await quotePrice(req.body);
 
   try {
     let upstream = await fetch(`${config.upstreamBaseUrl}/chat/completions`, {
@@ -396,7 +417,7 @@ async function handleResponses(req: Request, res: Response): Promise<void> {
   if (chatRequest.max_tokens === undefined) chatRequest.max_tokens = estimateOutputTokens(body);
 
   const payer = extractPayer(req.headers["payment-signature"] as string | undefined);
-  const quotedUsd = quotePrice(req.body);
+  const quotedUsd = await quotePrice(req.body);
 
   try {
     const upstream = await fetch(`${config.upstreamBaseUrl}/chat/completions`, {
@@ -578,16 +599,24 @@ app.get("/.well-known/x402", (req: Request, res: Response) => {
   });
 });
 
-app.get("/openapi.json", (req: Request, res: Response) => {
+app.get("/openapi.json", async (req: Request, res: Response) => {
+  let overhead: number;
+  try {
+    overhead = await paymentOverheadUsd();
+  } catch {
+    res.status(503).json({ error: "gas quote unavailable" });
+    return;
+  }
   const models = catalog();
   const origin = originOf(req);
   const modelIds = models.map((m) => m.id);
 
   const modelPricing = {
     type: "dynamic",
-    calculation: "input_tokens * input_rate + max_tokens * output_rate, floored at the minimum charge",
+    calculation: "input_tokens * input_rate + max_tokens * output_rate + settlement overhead, floored at the minimum charge",
     unit: "USD per 1M tokens",
     minimum_charge_usd: config.minChargeUsd,
+    ...(config.network === "eip155:5042" ? { settlement_gas_estimate_usd: overhead } : { settlement_overhead_usd: overhead }),
     models: models.map((m) => ({
       id: m.id,
       input: m.pricing.input,
@@ -603,7 +632,7 @@ app.get("/openapi.json", (req: Request, res: Response) => {
       (model) =>
         ((model.contextWindow * model.pricing.input + model.maxOutput * model.pricing.output) / 1_000_000) *
           config.priceMarkup +
-        config.facilitatorFeeUsd,
+        overhead,
     ),
     config.minChargeUsd,
   );
@@ -612,7 +641,7 @@ app.get("/openapi.json", (req: Request, res: Response) => {
     price: {
       mode: "dynamic",
       currency: "USD",
-      min: config.minChargeUsd.toFixed(6),
+      min: Math.max(config.minChargeUsd, overhead).toFixed(6),
       max: maxCatalogQuote.toFixed(6),
     },
     protocols: [{ x402: {} }],
@@ -986,7 +1015,9 @@ app.get("/llms.txt", (req: Request, res: Response) => {
       `POST ${baseUrl}/chat/completions`,
       "  OpenAI-compatible chat completions (paid).",
       "  Returns HTTP 402 with a PAYMENT-REQUIRED header when payment is required.",
-      "  Price = input_tokens * input_rate + max_tokens * output_rate.",
+      config.network === "eip155:5042"
+        ? "  Price = input_tokens * input_rate + max_tokens * output_rate + estimated Arc settlement gas."
+        : "  Price = input_tokens * input_rate + max_tokens * output_rate.",
       "",
       `POST ${origin}/api/v1/chat/completions`,
       "  Alias of the above, for agent crawlers (paid).",

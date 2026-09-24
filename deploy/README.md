@@ -31,3 +31,11 @@ The signer needs Arc USDC for gas before a real settlement can work. The
 gateway must use NETWORK=eip155:5042, the configured recipient, and a
 separate local port. Robinhood Chain needs a verified USDC token before
 payment support can be enabled there.
+
+Arc quotes add estimated settlement gas to the model price. The gateway
+reads eth_gasPrice from ARC_RPC_URL (default: https://rpc.mainnet.arc.io),
+assumes 125,000 gas units for transferWithAuthorization, and adds a 15%
+gas-price buffer. The estimate is cached for three seconds. If the RPC
+cannot supply a quote, the paid request fails closed. An old signed quote
+remains valid when the new estimate falls, provided it still covers the
+current model price and gas estimate; a higher estimate requires a new 402.

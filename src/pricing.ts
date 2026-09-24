@@ -1,6 +1,7 @@
 import { get_encoding, type Tiktoken } from "tiktoken";
 import { config } from "./config.js";
 import { isTokenPriced, pricingForModel, type TokenPricing } from "./models.js";
+import { paymentOverheadUsd } from "./gas.js";
 
 let encoder: Tiktoken | undefined;
 
@@ -124,22 +125,24 @@ export interface QuoteBreakdown {
   inputTokens?: number;
   outputTokens?: number;
   price: string;
+  paymentOverheadUsd: number;
   pricing: "per-token" | "per-request" | "default";
 }
 
 /**
  * Quote the exact price for one chat completion, before it runs:
  * counted input tokens + estimated output (max_tokens, else default estimate),
- * per-model $/1M-token rates, markup, plus the facilitator settlement fee.
+ * per-model $/1M-token rates, markup, plus settlement overhead.
  */
-export function quoteBreakdown(body: ChatRequestBody): QuoteBreakdown {
+export async function quoteBreakdown(body: ChatRequestBody): Promise<QuoteBreakdown> {
   const pricing = pricingForModel(body.model);
+  const overhead = await paymentOverheadUsd();
 
   if (!pricing) {
-    return { model: body.model, price: floorPrice(parseUsd(config.defaultPrice)), pricing: "default" };
+    return { model: body.model, price: floorPrice(parseUsd(config.defaultPrice) + (config.network === "eip155:5042" ? overhead : 0)), paymentOverheadUsd: overhead, pricing: "default" };
   }
   if (!isTokenPriced(pricing)) {
-    return { model: body.model, price: floorPrice(parseUsd(pricing.per_request)), pricing: "per-request" };
+    return { model: body.model, price: floorPrice(parseUsd(pricing.per_request) + (config.network === "eip155:5042" ? overhead : 0)), paymentOverheadUsd: overhead, pricing: "per-request" };
   }
 
   const p: TokenPricing = pricing;
@@ -148,13 +151,14 @@ export function quoteBreakdown(body: ChatRequestBody): QuoteBreakdown {
 
   const usd =
     ((inputTokens * p.input + outputTokens * p.output) / 1_000_000) * config.priceMarkup +
-    config.facilitatorFeeUsd;
+    overhead;
 
   return {
     model: body.model,
     inputTokens,
     outputTokens,
     price: floorPrice(usd),
+    paymentOverheadUsd: overhead,
     pricing: "per-token",
   };
 }
@@ -170,6 +174,6 @@ function floorPrice(usd: number): string {
   return formatUsd(Math.max(usd, config.minChargeUsd));
 }
 
-export function quotePrice(body: ChatRequestBody): string {
-  return quoteBreakdown(body).price;
+export async function quotePrice(body: ChatRequestBody): Promise<string> {
+  return (await quoteBreakdown(body)).price;
 }

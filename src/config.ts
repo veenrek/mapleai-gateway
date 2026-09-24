@@ -54,6 +54,7 @@ export const config = {
 
   facilitatorUrl: process.env.FACILITATOR_URL ?? "https://x402.org/facilitator",
   facilitatorToken: process.env.FACILITATOR_TOKEN,
+  arcRpcUrl: process.env.ARC_RPC_URL ?? "https://rpc.mainnet.arc.io",
 
   /** OpenAI-compatible upstream you are reselling access to */
   upstreamBaseUrl: (process.env.UPSTREAM_BASE_URL ?? "https://api.openai.com/v1").replace(/\/$/, ""),
@@ -70,7 +71,7 @@ export const config = {
   outputTokenCap: Number(process.env.OUTPUT_TOKEN_CAP ?? 16384),
   /** Multiplier on token cost (your margin) */
   priceMarkup: Number(process.env.PRICE_MARKUP ?? 1.25),
-  /** Facilitator settlement fee added to every paid call ($0.00152 on Solana mainnet via PayAI) */
+  /** Fixed overhead for non-Arc token-priced calls; Arc uses a live gas estimate. */
   facilitatorFeeUsd: Number(process.env.FACILITATOR_FEE_USD ?? 0.0016),
   /** Floor applied to every quote so dust-sized calls still cover settlement */
   minChargeUsd: Number(process.env.MIN_CHARGE_USD ?? 0.001),
