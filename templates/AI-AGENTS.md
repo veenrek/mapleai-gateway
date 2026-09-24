@@ -56,6 +56,8 @@ curl {{ORIGIN}}/api/v1/responses \
 
 ## Discovery Endpoints
 
+Developer guide with network URLs, model prices and request examples: {{ORIGIN}}/developers
+
 ### x402 Resource Manifest
 `GET {{ORIGIN}}/.well-known/x402`
 Machine-readable x402 resource manifest for wallet/agent discovery.

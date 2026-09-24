@@ -487,6 +487,7 @@ function sendDoc(req: Request, res: Response, template: string, type: string): v
 }
 
 app.get(["/", "/index.html"], (req, res) => sendDoc(req, res, "index.html", "html"));
+app.get(["/developers", "/developers/"], (req, res) => sendDoc(req, res, "developers.html", "html"));
 
 app.get("/AI-AGENTS.md", (req, res) =>
   sendDoc(req, res, "AI-AGENTS.md", "text/markdown; charset=utf-8"),

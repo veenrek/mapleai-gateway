@@ -77,6 +77,46 @@ function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
+function developerModelRowsHtml(): string {
+  return catalog().map((model) =>
+    '<tr><th scope="row"><code>' + escapeHtml(model.id) + '</code><span>' + escapeHtml(model.name) + '</span></th>' +
+    "<td>" + compactTokens(model.contextWindow) + "</td><td>$" + money(model.pricing.input) +
+    "</td><td>$" + money(model.pricing.output) + "</td></tr>",
+  ).join("\n");
+}
+
+function developerNetworkRowsHtml(currentNetwork: string): string {
+  const networks = [
+    { name: "Solana", id: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", origin: "https://sol.mapleai.shop" },
+    { name: "Base", id: "eip155:8453", origin: "https://base.mapleai.shop" },
+    { name: "Polygon", id: "eip155:137", origin: "https://polygon.mapleai.shop" },
+    { name: "Arc", id: "eip155:5042", origin: "https://arc.mapleai.shop" },
+  ];
+  return networks.map(({ name, id, origin }) =>
+    '<tr><th scope="row">' + name + (id === currentNetwork ? " (current)" : "") + "</th>" +
+    '<td><code>' + id + '</code></td><td><a href="' + origin + '/developers">' + origin + '</a></td></tr>',
+  ).join("\n");
+}
+
+function developerJavascriptHtml(network: string, assetAddress: string): string {
+  if (network.startsWith("solana:")) {
+    return "import { createSvmClient } from '@x402/svm/client';\n" +
+      "import { toClientSvmSigner } from '@x402/svm';\n" +
+      "import { createKeyPairSignerFromBytes } from '@solana/kit';\n" +
+      "import { base58 } from '@scure/base';\n" +
+      "const walletSigner = await createKeyPairSignerFromBytes(base58.decode(process.env.SVM_PRIVATE_KEY));\n" +
+      "const client = createSvmClient({ signer: toClientSvmSigner(walletSigner) });";
+  }
+  return "import { x402Client } from '@x402/core/client';\n" +
+    "import { registerExactEvmScheme } from '@x402/evm/exact/client';\n" +
+    "import { privateKeyToAccount } from 'viem/accounts';\n" +
+    "const account = privateKeyToAccount(process.env.EVM_PRIVATE_KEY);\n" +
+    "const client = new x402Client().setSpendControls({\n" +
+    "  allowedAssets: [{ network: '" + network + "', asset: '" + assetAddress + "', maxAmountPerPayment: '100000' }]\n" +
+    "});\n" +
+    "registerExactEvmScheme(client, { signer: account, networks: ['" + network + "'] });";
+}
+
 /**
  * Build every placeholder value for one request. `origin` is the externally
  * visible base URL (PUBLIC_BASE_URL when configured, else derived from the
@@ -111,6 +151,12 @@ export function docVars(origin: string): DocVars {
     MODELS_GRID: modelGridHtml(),
     MODELS_LIST: modelListMarkdown(),
     MODELS_TABLE: modelTableMarkdown(),
+    DEVELOPER_MODEL_ROWS: developerModelRowsHtml(),
+    DEVELOPER_NETWORK_ROWS: developerNetworkRowsHtml(config.network),
+    PAYMENT_NOTE: config.network === "eip155:5042"
+      ? "Arc adds a live estimate of settlement gas to the model cost. The exact USDC amount is in the 402 response."
+      : "The final quote includes the configured payment overhead and minimum charge. The exact USDC amount is in the 402 response.",
+    DEVELOPER_JAVASCRIPT: developerJavascriptHtml(config.network, chain.assetAddress),
     OG_DESCRIPTION:
       `${models.length} GPT models — GPT-5.6 Sol, GPT-5.6 Terra, GPT-6 Luna and GPT-6 Sol — ` +
       `behind one OpenAI-compatible endpoint. Pay per request in ${chain.asset} on ${chain.label}.`,
