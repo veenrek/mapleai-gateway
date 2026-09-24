@@ -4,9 +4,9 @@ The local MCP server exposes two tools: `list_models` (free) and `chat_completio
 
 ## Setup
 
-1. Install Node.js 20+ and run `npm ci` in this repository.
+1. Install Node.js 20+ and run `npx -y -p mapleai-mcp mapleai-quickstart --network polygon` to inspect a free quote.
 2. Fund a wallet with USDC on the network you plan to use. Set `EVM_PRIVATE_KEY` for Base, Polygon, or Arc, or `SVM_PRIVATE_KEY` for Solana. The Solana key can be a base58 encoded keypair or a JSON array of keypair bytes.
-3. Configure your MCP client to launch `npm --silent run mcp` in this repository. An example client configuration is in [client-config.example.json](client-config.example.json). Replace the local path and key placeholder. Keep the key out of source control.
+3. Configure your MCP client with [client-config.example.json](client-config.example.json). Replace the key placeholder. Keep the key out of source control.
 4. Set the expected payment recipient: `MCP_PAY_TO_POLYGON`, `MCP_PAY_TO_BASE`, `MCP_PAY_TO_ARC`, or `MCP_PAY_TO_SOLANA`. Confirm it against the corresponding `/.well-known/x402` manifest. The current Polygon, Base, and Arc recipient is `0x63db6eaf635a31bbc6714fe37bdc85243864f611`; the Solana recipient is `9DbpH2Mf9D26ak4bASsv6KA4Ra4V571oLpiVdZjAjcU8`.
 
 Polygon is the default network. Use the `network` tool argument to select `base`, `polygon`, `arc`, or `solana`. The default maximum payment is 0.10 USDC per call; change it with `MCP_MAX_PAYMENT_USDC`. A request above the limit is rejected before signing.

@@ -118,12 +118,13 @@
       </section>
       <section id="mcp">
         <h2>MCP for agent clients</h2>
-        <p>Run the local stdio server with Node.js 20+. It exposes <code>list_models</code> and <code>chat_completion</code>. The server signs the x402 challenge and retries the API request; the agent client only needs standard MCP tool support.</p>
+        <p>Use the local stdio server with Node.js 20+. It exposes <code>list_models</code> and <code>chat_completion</code>. The server signs the x402 challenge and retries the API request; the agent client only needs standard MCP tool support.</p>
+        <div class="snippet"><div class="snippet-title">Check a quote without paying</div><pre><code>npx -y -p mapleai-mcp mapleai-quickstart --network polygon</code></pre></div>
         <div class="snippet"><div class="snippet-title">Client MCP configuration</div><pre><code>{
   "mcpServers": {
     "mapleai": {
-      "command": "npm",
-      "args": ["--silent", "run", "--prefix", "/absolute/path/to/api_sell_2", "mcp"],
+      "command": "npx",
+      "args": ["-y", "-p", "mapleai-mcp", "mapleai-mcp"],
       "env": {
         "EVM_PRIVATE_KEY": "0x...",
         "MCP_PAY_TO_POLYGON": "0x63db6eaf635a31bbc6714fe37bdc85243864f611",
@@ -132,7 +133,7 @@
     }
   }
 }</code></pre></div>
-        <p class="note">Install dependencies with <code>npm ci</code> in the local project directory. For Base and Arc, set <code>MCP_PAY_TO_BASE</code> or <code>MCP_PAY_TO_ARC</code> to the verified recipient. For Solana use <code>SVM_PRIVATE_KEY</code> and <code>MCP_PAY_TO_SOLANA=9DbpH2Mf9D26ak4bASsv6KA4Ra4V571oLpiVdZjAjcU8</code>. The default network is Polygon. Keep the wallet key in your local MCP client configuration.</p>
+        <p class="note">After checking the quote, use <code>mapleai-quickstart --pay</code> with a funded local wallet to test settlement. For Base and Arc, set <code>MCP_PAY_TO_BASE</code> or <code>MCP_PAY_TO_ARC</code> to the verified recipient. For Solana use <code>SVM_PRIVATE_KEY</code> and <code>MCP_PAY_TO_SOLANA=9DbpH2Mf9D26ak4bASsv6KA4Ra4V571oLpiVdZjAjcU8</code>. The default network is Polygon. Keep the wallet key in your local MCP client configuration.</p>
       </section>
       <section id="javascript">
         <h2>JavaScript</h2>

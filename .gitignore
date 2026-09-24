@@ -1,4 +1,7 @@
 node_modules/
+packages/mapleai-mcp/dist/
+packages/mapleai-mcp/package-check/
+packages/mapleai-mcp/*.tgz
 .env
 *.log
 ledger.jsonl
