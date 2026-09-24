@@ -79,7 +79,7 @@
     <div class="quicklinks"><a href="/openapi.json">OpenAPI 3.1</a><a href="/v1/models">GET /v1/models</a><a href="/.well-known/x402">x402 discovery</a></div>
   </div>
   <div class="layout">
-    <aside aria-label="On this page"><a href="#endpoints">Endpoints</a><a href="#models">Models &amp; pricing</a><a href="#networks">Networks</a><a href="#curl">cURL</a><a href="#javascript">JavaScript</a></aside>
+    <aside aria-label="On this page"><a href="#endpoints">Endpoints</a><a href="#models">Models &amp; pricing</a><a href="#networks">Networks</a><a href="#curl">cURL</a><a href="#javascript">JavaScript</a><a href="#mcp">MCP</a></aside>
     <article>
       <section id="endpoints">
         <h2>Endpoints</h2>
@@ -115,6 +115,24 @@
   -H "PAYMENT-SIGNATURE: $PAYMENT_SIGNATURE" \
   -d '{"model":"{{DEFAULT_MODEL}}","messages":[{"role":"user","content":"Hello"}],"max_tokens":64}'</code></pre></div>
         <p class="muted">Use the same request body for both calls. <code>PAYMENT_SIGNATURE</code> is the base64 x402 payment payload signed by your wallet.</p>
+      </section>
+      <section id="mcp">
+        <h2>MCP for agent clients</h2>
+        <p>Run the local stdio server with Node.js 20+. It exposes <code>list_models</code> and <code>chat_completion</code>. The server signs the x402 challenge and retries the API request; the agent client only needs standard MCP tool support.</p>
+        <div class="snippet"><div class="snippet-title">Client MCP configuration</div><pre><code>{
+  "mcpServers": {
+    "mapleai": {
+      "command": "npm",
+      "args": ["run", "--prefix", "/absolute/path/to/api_sell_2", "mcp"],
+      "env": {
+        "EVM_PRIVATE_KEY": "0x...",
+        "MCP_PAY_TO_POLYGON": "0x63db6eaf635a31bbc6714fe37bdc85243864f611",
+        "MCP_MAX_PAYMENT_USDC": "0.10"
+      }
+    }
+  }
+}</code></pre></div>
+        <p class="note">Install dependencies with <code>npm ci</code> in the local project directory. For Base and Arc, set <code>MCP_PAY_TO_BASE</code> or <code>MCP_PAY_TO_ARC</code> to the verified recipient. For Solana use <code>SVM_PRIVATE_KEY</code> and <code>MCP_PAY_TO_SOLANA=9DbpH2Mf9D26ak4bASsv6KA4Ra4V571oLpiVdZjAjcU8</code>. The default network is Polygon. Keep the wallet key in your local MCP client configuration.</p>
       </section>
       <section id="javascript">
         <h2>JavaScript</h2>
