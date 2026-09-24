@@ -16,7 +16,8 @@
     "@x402/extensions": "^2.27.0",
     "@x402/svm": "^2.27.0",
     "express": "^4.21.2",
-    "tiktoken": "^1.0.22"
+    "tiktoken": "^1.0.22",
+    "viem": "^2.48.11"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",

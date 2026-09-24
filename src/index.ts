@@ -3,6 +3,7 @@ import { paymentMiddleware, x402ResourceServer } from "@x402/express";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { ExactSvmScheme } from "@x402/svm/exact/server";
 import { HTTPFacilitatorClient, type HTTPRequestContext } from "@x402/core/server";
+import { convertToTokenAmount } from "@x402/core/utils";
 import { bazaarResourceServerExtension, declareDiscoveryExtension } from "@x402/extensions/bazaar";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
@@ -35,10 +36,26 @@ app.use(express.json({ limit: "10mb" }));
 // x402 resource server
 // ---------------------------------------------------------------------------
 
-const facilitator = new HTTPFacilitatorClient({ url: config.facilitatorUrl });
+const facilitator = new HTTPFacilitatorClient({
+  url: config.facilitatorUrl,
+  ...(config.facilitatorToken ? {
+    createAuthHeaders: async () => {
+      const headers = { Authorization: "Bearer " + config.facilitatorToken };
+      return { supported: headers, verify: headers, settle: headers };
+    },
+  } : {}),
+});
+const evmScheme = new ExactEvmScheme();
+if (config.network === "eip155:5042") {
+  evmScheme.registerMoneyParser(async (amount) => ({
+    amount: convertToTokenAmount(String(amount), 6),
+    asset: chain.assetAddress,
+    extra: { name: "USDC", version: "2" },
+  }));
+}
 const resourceServer = new x402ResourceServer(facilitator).register(
   config.network,
-  config.network.startsWith("solana:") ? new ExactSvmScheme() : new ExactEvmScheme(),
+  config.network.startsWith("solana:") ? new ExactSvmScheme() : evmScheme,
 );
 resourceServer.registerExtension(bazaarResourceServerExtension);
 

@@ -53,6 +53,7 @@ export const config = {
   paymentAssetAddress: process.env.PAYMENT_ASSET_ADDRESS,
 
   facilitatorUrl: process.env.FACILITATOR_URL ?? "https://x402.org/facilitator",
+  facilitatorToken: process.env.FACILITATOR_TOKEN,
 
   /** OpenAI-compatible upstream you are reselling access to */
   upstreamBaseUrl: (process.env.UPSTREAM_BASE_URL ?? "https://api.openai.com/v1").replace(/\/$/, ""),
