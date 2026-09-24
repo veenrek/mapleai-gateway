@@ -1,0 +1,7 @@
+*** Begin Patch
+*** Update File: src/models.ts
+@@
+ export function listModels(): ModelEntry[] {
++// probe
+   return Object.entries(config.modelPrices).map(([id, pricing]) => ({
+*** End Patch

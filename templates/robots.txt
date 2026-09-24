@@ -1,0 +1,43 @@
+# robots.txt for {{BRAND}}
+# {{ORIGIN}}
+
+User-agent: *
+Allow: /
+Disallow: /v1/chat/completions
+Disallow: /api/v1/chat/completions
+Disallow: /api/v1/responses
+Disallow: /v1/responses
+Disallow: /health
+
+# AI crawlers are explicitly welcome — this service is built for agents.
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+Sitemap: {{ORIGIN}}/sitemap.xml

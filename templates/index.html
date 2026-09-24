@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{BRAND}} — GPT API with x402 Pay-Per-Request</title>
+<meta name="description" content="{{OG_DESCRIPTION}}">
+<meta name="keywords" content="gpt api, openai api, gpt-5.6, gpt-6, pay per request, x402, usdc payment, {{CHAIN}}, openai compatible, llm api, ai api">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="/favicon.ico">
+<meta name="theme-color" content="#0F1117">
+<meta property="og:title" content="{{BRAND}} — GPT API with x402 Pay-Per-Request">
+<meta property="og:description" content="{{OG_DESCRIPTION}}">
+<meta property="og:type" content="website">
+<meta property="og:url" content="{{ORIGIN}}/">
+<meta property="og:site_name" content="{{BRAND}}">
+<meta name="twitter:card" content="summary">
+<meta name="robots" content="index, follow">
+<meta name="googlebot" content="index, follow">
+<link rel="canonical" href="{{ORIGIN}}/">
+
+<!-- Structured data for AI agents -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "{{BRAND}}",
+  "applicationCategory": "DeveloperApplication",
+  "offers": {
+    "@type": "Offer",
+    "price": "{{MIN_CHARGE}}",
+    "priceCurrency": "USD",
+    "priceSpecification": {
+      "@type": "UnitPriceSpecification",
+      "price": "{{MIN_PRICE}}",
+      "priceCurrency": "USD",
+      "referenceQuantity": {
+        "@type": "QuantitativeValue",
+        "value": "1000000",
+        "unitText": "tokens"
+      }
+    }
+  },
+  "description": "{{OG_DESCRIPTION}}",
+  "featureList": ["OpenAI-compatible API", "{{MODEL_COUNT}} GPT models", "x402 payments", "No API keys required", "No subscriptions"],
+  "operatingSystem": "Any",
+  "url": "{{ORIGIN}}"
+}
+</script>
+
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --bg-soft: #f8f9fb;
+  --bg-card: #ffffff;
+  --fg: #0b1220;
+  --fg-muted: #5a6b85;
+  --line: #e2e8f0;
+  --accent: #5B8CFF;
+  --accent-soft: #eff4ff;
+  --claude: #CC9B7A;
+  --code-bg: #0f172a;
+  --code-fg: #e6edf7;
+  --code-muted: #8fa3bf;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0F1117;
+    --bg-soft: #171A23;
+    --bg-card: #1E222E;
+    --fg: #e8eef8;
+    --fg-muted: #94a6c0;
+    --line: #2a3142;
+    --accent: #6f9bff;
+    --accent-soft: #1a2540;
+    --code-bg: #0a0e1a;
+    --code-fg: #e6edf7;
+    --code-muted: #7e93b1;
+  }
+}
+* { box-sizing: border-box; margin: 0; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, pre { font-family: var(--mono); }
+.wrap { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+
+header {
+  border-bottom: 1px solid var(--line);
+  position: sticky; top: 0;
+  background: color-mix(in srgb, var(--bg) 90%, transparent);
+  backdrop-filter: blur(10px);
+  z-index: 10;
+}
+.bar { display: flex; align-items: center; gap: 14px; height: 64px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 620; letter-spacing: -0.01em; font-size: 17px; color: var(--fg); }
+.brand:hover { text-decoration: none; }
+.brand svg { flex: none; }
+nav { margin-left: auto; display: flex; gap: 24px; font-size: 14px; font-weight: 500; }
+nav a { color: var(--fg-muted); }
+nav a:hover { color: var(--accent); text-decoration: none; }
+@media (max-width: 720px) {
+  .bar { height: auto; min-height: 60px; padding: 12px 0; flex-wrap: wrap; }
+  nav { width: 100%; gap: 12px 18px; font-size: 13px; margin-left: 0; }
+}
+
+.hero { padding: 80px 0 64px; }
+h1 {
+  font-size: clamp(32px, 5.5vw, 52px);
+  line-height: 1.1; letter-spacing: -0.03em;
+  margin: 0 0 20px; max-width: 18ch; font-weight: 660;
+}
+h1 .hl { color: var(--claude); }
+.lede {
+  font-size: clamp(17px, 2.2vw, 20px);
+  color: var(--fg-muted); max-width: 60ch; margin: 0 0 32px; line-height: 1.55;
+}
+
+.endpoint {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--bg-soft); padding: 16px 20px; margin-bottom: 32px;
+}
+.endpoint .label { font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--fg-muted); font-weight: 620; }
+.endpoint .url { font-family: var(--mono); font-size: 15px; font-weight: 600; word-break: break-all; }
+.endpoint .badge { font-size: 12px; color: var(--fg-muted); margin-left: auto; display: flex; gap: 10px; flex-wrap: wrap; }
+
+.stats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1px; background: var(--line); border: 1px solid var(--line);
+  border-radius: 8px; overflow: hidden; margin-bottom: 80px;
+}
+.stat { background: var(--bg-card); padding: 18px 20px; }
+.stat b { display: block; font-size: 24px; font-weight: 660; letter-spacing: -0.02em; font-family: var(--mono); color: var(--claude); }
+.stat span { font-size: 13px; color: var(--fg-muted); }
+
+section { padding-bottom: 72px; scroll-margin-top: 80px; }
+h2 {
+  font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--fg-muted); font-weight: 650; margin: 0 0 8px;
+}
+.h2sub {
+  font-size: clamp(22px, 3.2vw, 28px); letter-spacing: -0.02em;
+  margin: 0 0 28px; font-weight: 620; line-height: 1.25;
+}
+
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px; }
+.card {
+  border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+  background: var(--bg-card); display: flex; flex-direction: column;
+}
+.card > h3 {
+  margin: 0; font-size: 15px; font-weight: 620; padding: 14px 18px;
+  border-bottom: 1px solid var(--line); background: var(--bg-soft);
+  display: flex; align-items: center; gap: 9px;
+}
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--claude); flex: none; }
+.dot.blue { background: var(--accent); }
+.card p { margin: 0; padding: 14px 18px 0; font-size: 14px; color: var(--fg-muted); line-height: 1.55; }
+pre {
+  margin: 14px 0 0; padding: 18px; overflow-x: auto;
+  background: var(--code-bg); color: var(--code-fg);
+  font-size: 13px; line-height: 1.62; flex: 1;
+}
+pre .c { color: var(--code-muted); }
+pre .k { color: #7ee2b8; }
+
+.models {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;
+}
+.model {
+  border: 1px solid var(--line); border-radius: 6px; padding: 16px 18px;
+  background: var(--bg-card);
+}
+.model h3 { margin: 0 0 6px; font-size: 15px; font-weight: 620; }
+.model .meta { font-size: 12px; color: var(--fg-muted); margin-bottom: 10px; }
+.model .price { font-family: var(--mono); font-size: 13px; color: var(--claude); font-weight: 600; }
+
+ol.steps {
+  counter-reset: s; list-style: none; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;
+}
+ol.steps li { counter-increment: s; border-top: 2px solid var(--accent); padding-top: 16px; }
+ol.steps li::before {
+  content: counter(s, decimal-leading-zero); font-family: var(--mono);
+  font-size: 12px; color: var(--accent); font-weight: 700;
+  display: block; margin-bottom: 8px;
+}
+ol.steps h3 { margin: 0 0 8px; font-size: 16px; font-weight: 620; }
+ol.steps p { margin: 0; font-size: 14px; color: var(--fg-muted); line-height: 1.55; }
+
+footer {
+  border-top: 1px solid var(--line); padding: 32px 0 56px;
+  font-size: 13.5px; color: var(--fg-muted);
+}
+.frow { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; }
+footer a { color: var(--fg-muted); }
+footer a:hover { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap bar">
+    <a class="brand" href="/">
+      <svg width="28" height="28" viewBox="0 0 100 100" fill="none" aria-hidden="true">
+        <circle cx="50" cy="50" r="38" stroke="currentColor" stroke-width="6" fill="none"/>
+        <path d="M30 50 L45 65 L70 35" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      </svg>
+      <span>{{BRAND}}</span>
+    </a>
+    <nav>
+      <a href="#quickstart">Quickstart</a>
+      <a href="#models">Models</a>
+      <a href="#payment">Payment</a>
+      <a href="/v1/models">API</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <div class="hero">
+    <h1>Premium <span class="hl">GPT access</span>, no subscription.</h1>
+    <p class="lede">
+      {{MODEL_COUNT}} GPT models behind one OpenAI-compatible endpoint.
+      Pay per request in {{ASSET}} on {{CHAIN}}. No account, no API key rotation, no monthly bill.
+    </p>
+
+    <div class="endpoint">
+      <span class="label">Base URL</span>
+      <span class="url">{{API_BASE}}</span>
+      <div class="badge">
+        <span>OpenAI-compatible</span>
+        <span>•</span>
+        <span>x402</span>
+        <span>•</span>
+        <span>{{CHAIN}}</span>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><b>{{MODEL_COUNT}}</b><span>GPT models</span></div>
+      <div class="stat"><b>${{MIN_PRICE}}</b><span>per 1M input tokens, from</span></div>
+      <div class="stat"><b>{{MAX_CONTEXT}}</b><span>context window</span></div>
+      <div class="stat"><b>${{MIN_CHARGE}}</b><span>minimum charge</span></div>
+    </div>
+  </div>
+
+  <section id="models">
+    <h2>Models</h2>
+    <p class="h2sub">Current model rates are listed below.</p>
+    <div class="models">
+{{MODELS_GRID}}
+    </div>
+    <p style="margin-top: 20px; color: var(--fg-muted); font-size: 14px;">
+      Full catalog with live pricing: <a href="/v1/models">GET /v1/models</a>
+    </p>
+  </section>
+
+  <section id="quickstart">
+    <h2>Quickstart</h2>
+    <p class="h2sub">OpenAI-compatible requests with x402 payment. An x402-aware client must sign and retry after the 402 challenge.</p>
+    <div class="cols">
+
+      <article class="card">
+        <h3><span class="dot"></span>Python SDK</h3>
+        <p>Use an x402-aware HTTP client to attach a payment signature.</p>
+        <pre><code><span class="c"># pip install openai</span>
+from openai import OpenAI
+
+client = OpenAI(
+  base_url=<span class="k">"{{API_BASE}}"</span>,
+  api_key=<span class="k">"payment-signature-required"</span>  <span class="c"># use an x402 client</span>
+)
+
+response = client.chat.completions.create(
+  model=<span class="k">"{{DEFAULT_MODEL}}"</span>,
+  messages=[{<span class="k">"role"</span>: <span class="k">"user"</span>, <span class="k">"content"</span>: <span class="k">"Hello"</span>}]
+)
+print(response.choices[0].message.content)</code></pre>
+      </article>
+
+      <article class="card">
+        <h3><span class="dot blue"></span>TypeScript / Node.js</h3>
+        <p>An x402 client must sign and retry after the 402 challenge.</p>
+        <pre><code><span class="c">// npm install openai</span>
+import OpenAI from 'openai';
+
+const client = new OpenAI({
+  baseURL: <span class="k">'{{API_BASE}}'</span>,
+  apiKey: <span class="k">'payment-signature-required'</span>  <span class="c">// use an x402 client</span>
+});
+
+const response = await client.chat.completions.create({
+  model: <span class="k">'{{DEFAULT_MODEL}}'</span>,
+  messages: [{role: <span class="k">'user'</span>, content: <span class="k">'Hello'</span>}]
+});
+console.log(response.choices[0].message.content);</code></pre>
+      </article>
+
+      <article class="card">
+        <h3><span class="dot"></span>cURL (with x402 payment)</h3>
+        <p>First call returns 402 with the price, retry with a {{ASSET}} payment signature.</p>
+        <pre><code>curl {{API_BASE}}/chat/completions \
+  -H <span class="k">'content-type: application/json'</span> \
+  -d <span class="k">'{
+    "model": "{{DEFAULT_MODEL}}",
+    "messages": [{"role": "user", "content": "Hi"}]
+  }'</span>
+
+<span class="c"># 402 Payment Required</span>
+<span class="c"># Response includes the {{ASSET}} amount + payment details</span>
+<span class="c"># Sign with your wallet, retry with the signature</span></code></pre>
+      </article>
+
+      <article class="card">
+        <h3><span class="dot blue"></span>Responses API</h3>
+        <p>OpenAI Responses shape, translated upstream.</p>
+        <pre><code>curl {{ORIGIN}}/api/v1/responses \
+  -H <span class="k">'content-type: application/json'</span> \
+  -d <span class="k">'{
+    "model": "{{DEFAULT_MODEL}}",
+    "input": "Explain x402 in one line"
+  }'</span>
+
+<span class="c"># {"object":"response","output_text":"...", ...}</span></code></pre>
+      </article>
+
+    </div>
+  </section>
+
+  <section id="payment">
+    <h2>Payment</h2>
+    <p class="h2sub">x402 protocol — priced upfront, settled on-chain.</p>
+    <ol class="steps">
+      <li>
+        <h3>Request without payment</h3>
+        <p>Send your OpenAI-compatible request to our endpoint. No auth header needed.</p>
+      </li>
+      <li>
+        <h3>Receive 402 with exact price</h3>
+        <p>The response includes the precise {{ASSET}} amount for your token count, the treasury address, and the accepted payment scheme.</p>
+      </li>
+      <li>
+        <h3>Sign &amp; retry with payment</h3>
+        <p>Your wallet signs the {{ASSET}} transfer. The facilitator co-signs as fee payer (no native gas needed). Retry the request with the signature — it runs immediately.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section id="discovery">
+    <h2>Discovery</h2>
+    <p class="h2sub">Machine-readable endpoints for AI agents and scanners.</p>
+    <div class="cols">
+      <article class="card">
+        <h3><span class="dot blue"></span>x402 resource manifest</h3>
+        <p>Discovery endpoint for x402-compatible wallets and AI agents.</p>
+        <pre><code>curl {{ORIGIN}}/.well-known/x402</code></pre>
+      </article>
+      <article class="card">
+        <h3><span class="dot"></span>Model catalog API</h3>
+        <p>OpenAI-compatible models list with per-model pricing.</p>
+        <pre><code>curl {{API_BASE}}/models</code></pre>
+      </article>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap frow">
+    <span>© {{YEAR}} {{BRAND}}</span>
+    <a href="/v1/models">Models</a>
+    <a href="/.well-known/x402">.well-known/x402</a>
+    <a href="/openapi.json">OpenAPI</a>
+    <a href="/llms.txt">llms.txt</a>
+    <a href="/health">Health</a>
+    <a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a>
+  </div>
+</footer>
+
+</body>
+</html>

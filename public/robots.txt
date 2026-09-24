@@ -1,0 +1,20 @@
+User-agent: *
+Allow: /
+
+# AI Agents
+User-agent: Anthropic-AI
+User-agent: Claude-Web
+User-agent: GPTBot
+User-agent: ChatGPT-User
+User-agent: Google-Extended
+User-agent: GoogleOther
+User-agent: Applebot-Extended
+User-agent: Meta-ExternalAgent
+User-agent: PerplexityBot
+User-agent: YouBot
+User-agent: Amazonbot
+User-agent: ClaudeBot
+Allow: /
+
+# Priority pages for indexing
+Sitemap: https://sol.mapleai.shop/sitemap.xml

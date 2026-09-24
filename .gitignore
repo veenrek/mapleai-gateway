@@ -1,0 +1,10 @@
+node_modules/
+.env
+*.log
+ledger.jsonl
+nexocap/cfg/
+nexocap/
+tools/key-test.sh
+tools/model-check.sh
+tools/node-upstream-test.mjs
+tools/proto-test.sh
