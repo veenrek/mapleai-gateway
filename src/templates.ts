@@ -84,7 +84,7 @@ function escapeHtml(value: string): string {
  */
 export function docVars(origin: string): DocVars {
   const models = catalog();
-  const chain = chainInfo(config.network);
+  const chain = chainInfo(config.network, config.paymentAssetAddress);
   const minPrice = minInputPrice();
   const defaultModel = models[0]?.id ?? "openai/gpt-5.6-sol";
   const brand = config.serviceName;

@@ -49,6 +49,8 @@ export const config = {
 
   /** Address that receives USDC payments (Solana base58 or EVM 0x…, must match NETWORK) */
   payTo: required("PAY_TO"),
+  /** Required on Robinhood Chain until an official USDC address is confirmed. */
+  paymentAssetAddress: process.env.PAYMENT_ASSET_ADDRESS,
 
   facilitatorUrl: process.env.FACILITATOR_URL ?? "https://x402.org/facilitator",
 

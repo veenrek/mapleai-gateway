@@ -25,7 +25,7 @@ import { docVars, render } from "./templates.js";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = join(__dirname, "../public");
 
-const chain = chainInfo(config.network);
+const chain = chainInfo(config.network, config.paymentAssetAddress);
 const app = express();
 app.disable("x-powered-by");
 app.set("trust proxy", true);
