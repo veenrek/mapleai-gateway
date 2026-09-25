@@ -200,8 +200,18 @@ function paidRoute(description: string, discovery: ReturnType<typeof declareDisc
 const CHAT_DESCRIPTION =
   "OpenAI-compatible chat completion, priced by counted input tokens + max output tokens at per-model rates";
 
+const imageExampleModel = imageModels[0] ?? "gpt-image-2";
+const imageExampleSize = Object.keys(imageRates[imageExampleModel] ?? {})[0] ?? "1024x1024";
+const imageExample = { model: imageExampleModel, size: imageExampleSize, n: 1, prompt: "A maple leaf" };
+// A complete 1x1 PNG keeps discovery probes small while passing edit validation.
+const imageEditExample = {
+  ...imageExample,
+  prompt: "Make the leaf green",
+  image: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
+};
+
 const imageDiscovery = declareDiscoveryExtension({
-  input: { model: imageModels[0] ?? "gpt-image-2.5", size: Object.keys(imageRates[imageModels[0]] ?? {})[0] ?? "1024x1024", n: 1, prompt: "A maple leaf" },
+  input: imageExample,
   inputSchema: { type: "object", required: ["model", "size", "prompt"], properties: {
     model: { type: "string", enum: imageModels },
     size: { type: "string" }, n: { type: "integer", minimum: 1, maximum: 4 },
@@ -211,7 +221,7 @@ const imageDiscovery = declareDiscoveryExtension({
   output: { example: { created: 1700000000, data: [{ url: "https://example.com/image.png" }] } },
 });
 const editDiscovery = declareDiscoveryExtension({
-  input: { model: imageModels[0] ?? "gpt-image-2.5", size: Object.keys(imageRates[imageModels[0]] ?? {})[0] ?? "1024x1024", n: 1, prompt: "Make the sky blue", image: "data:image/png;base64,iVBORw0KGgo..." },
+  input: imageEditExample,
   inputSchema: { type: "object", required: ["model", "size", "prompt", "image"], properties: {
     model: { type: "string", enum: imageModels }, size: { type: "string" },
     n: { type: "integer", minimum: 1, maximum: 4 }, prompt: { type: "string" },
@@ -638,6 +648,22 @@ app.get("/.well-known/x402", (req: Request, res: Response) => {
         description: "OpenAI-compatible Responses API (alpha)",
         pricedBy: "input tokens + max_output_tokens, per-model $/1M-token rates",
       },
+      ...(imagesEnabled ? [
+        {
+          method: "POST",
+          path: "/api/v1/images/generations",
+          description: "Image generation",
+          pricedBy: "model, size and image count",
+          exampleBody: imageExample,
+        },
+        {
+          method: "POST",
+          path: "/api/v1/images/image2image",
+          description: "Image editing",
+          pricedBy: "model, size and image count",
+          exampleBody: imageEditExample,
+        },
+      ] : []),
       {
         method: "GET",
         path: "/v1/models",
@@ -927,7 +953,7 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
     "402": paidResponses["402"],
     "502": { description: "Image upstream failed" },
   };
-  const imageBody = (edit: boolean) => ({ required: true, content: { "application/json": { schema: {
+  const imageBody = (edit: boolean) => ({ required: true, content: { "application/json": { example: edit ? imageEditExample : imageExample, schema: {
     type: "object", required: edit ? ["model", "size", "prompt", "image"] : ["model", "size", "prompt"],
     properties: { model: { type: "string", enum: imageModels }, size: { type: "string", description: "A listed size for the selected model" },
       n: { type: "integer", minimum: 1, maximum: 4, default: 1 }, prompt: { type: "string", maxLength: 4000 },
