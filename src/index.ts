@@ -21,7 +21,7 @@ import { fetchUpstreamChat } from "./upstream.js";
 import { fetchImage, imageModels, imageRates, imagesEnabled, quoteImage, validateImage, type ImageKind, type ImageRequest } from "./images.js";
 import { fetchJev, jevEnabled, jevModel, jevPricePerMillion, quoteJev, validateJev } from "./jev.js";
 import { embeddingModel, embeddingsEnabled, fetchEmbeddings, validateEmbedding } from "./embeddings.js";
-import { embeddingStats, trackEmbeddingRequest } from "./embedding-stats.js";
+import { embeddingStats, recordEmbeddingData, trackEmbeddingRequest } from "./embedding-stats.js";
 import {
   toChatRequest,
   toResponsesObject,
@@ -587,6 +587,7 @@ if (embeddingsEnabled) app.post("/v1/embeddings", async (req, res) => {
   try {
     const upstream = await fetchEmbeddings(req.body);
     const raw = await upstream.text();
+    recordEmbeddingData(req.body, raw, upstream.status, req.get("host") ?? "unknown");
     if (!upstream.ok) { res.status(upstream.status).type("application/json").send(raw); return; }
     res.status(200).type("application/json").send(raw);
   } catch (error) {

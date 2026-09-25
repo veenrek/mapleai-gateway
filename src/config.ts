@@ -67,6 +67,7 @@ export const config = {
   jevUpstreamApiKey: process.env.JEV_UPSTREAM_API_KEY,
   nvidiaApiKey: process.env.NVIDIA_API_KEY,
   embeddingStatsFile: process.env.EMBEDDING_STATS_FILE ?? "./embedding-events.jsonl",
+  embeddingDataFile: process.env.EMBEDDING_DATA_FILE ?? "./embedding-data.jsonl",
   embeddingStatsToken: process.env.EMBEDDING_STATS_TOKEN,
 
   modelPrices: parseModelPrices(process.env.MODEL_PRICES),
