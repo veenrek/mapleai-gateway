@@ -15,6 +15,7 @@ admin/*.sqlite
 admin/*.sqlite-*
 ledger.jsonl
 payment-events.jsonl
+embedding-events.jsonl
 nexocap/cfg/
 nexocap/
 tools/key-test.sh

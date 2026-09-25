@@ -21,6 +21,7 @@ import { fetchUpstreamChat } from "./upstream.js";
 import { fetchImage, imageModels, imageRates, imagesEnabled, quoteImage, validateImage, type ImageKind, type ImageRequest } from "./images.js";
 import { fetchJev, jevEnabled, jevModel, jevPricePerMillion, quoteJev, validateJev } from "./jev.js";
 import { embeddingModel, embeddingsEnabled, fetchEmbeddings, validateEmbedding } from "./embeddings.js";
+import { embeddingStats, trackEmbeddingRequest } from "./embedding-stats.js";
 import {
   toChatRequest,
   toResponsesObject,
@@ -256,7 +257,7 @@ if (imagesEnabled) {
   app.post("/api/v1/images/image2image", validateImage("edit"));
 }
 if (jevEnabled) app.post("/jev", validateJev);
-if (embeddingsEnabled) app.post("/v1/embeddings", validateEmbedding);
+if (embeddingsEnabled) app.post("/v1/embeddings", (req, res, next) => { trackEmbeddingRequest(req, res); validateEmbedding(req, res, next); });
 
 const PAID_ROUTES = {
   "POST /v1/chat/completions": paidRoute(CHAT_DESCRIPTION, chatDiscovery),
@@ -593,6 +594,7 @@ if (embeddingsEnabled) app.post("/v1/embeddings", async (req, res) => {
     res.status(502).json({ error: { message: "Embeddings request failed", type: "upstream_error" } });
   }
 });
+if (embeddingsEnabled) app.get("/api/v1/embeddings/stats", (_req, res) => res.json({ object: "embedding_stats", model: embeddingModel, ...embeddingStats() }));
 
 // ---------------------------------------------------------------------------
 // Public documents, rendered from the live catalog
