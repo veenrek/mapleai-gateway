@@ -1196,7 +1196,7 @@ app.get("/llms.txt", (req: Request, res: Response) => {
       `- Currency: ${chain.asset} (${chain.assetAddress})`,
       `- Recipient: ${config.payTo}`,
       `- Facilitator: ${config.facilitatorUrl}`,
-      `- Minimum charge: $${config.minChargeUsd.toFixed(3)} per paid request`,
+      `- Minimum charge: $${config.minChargeUsd.toFixed(4)} per paid request (about $0.002 rounded)`,
       `- Contact: ${config.contactEmail}`,
       "",
       "## Endpoints",

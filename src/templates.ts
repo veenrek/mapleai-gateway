@@ -179,7 +179,7 @@ export function docVars(origin: string): DocVars {
     MIN_PRICE: money(minPrice),
     MAX_CONTEXT: compactTokens(maxContextWindow()),
     DEFAULT_MODEL: defaultModel,
-    MIN_CHARGE: config.minChargeUsd.toFixed(3),
+    MIN_CHARGE: config.minChargeUsd.toFixed(4),
     MODELS_GRID: modelGridHtml(),
     MODELS_LIST: modelListMarkdown(),
     MODELS_TABLE: modelTableMarkdown(),
