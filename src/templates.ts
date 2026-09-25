@@ -169,6 +169,10 @@ export function docVars(origin: string): DocVars {
     PAY_TO: config.payTo,
     CONTACT_EMAIL: config.contactEmail,
     MODEL_COUNT: String(models.length),
+    IMAGE_FEATURE: imagesEnabled ? ', "' + Object.keys(imageRates).length + ' image models"' : '',
+    HOME_MODEL_SUMMARY: imagesEnabled
+      ? models.length + ' GPT models and ' + Object.keys(imageRates).length + ' image models for generation and editing.'
+      : models.length + ' GPT models behind one OpenAI-compatible endpoint.',
     MIN_PRICE: money(minPrice),
     MAX_CONTEXT: compactTokens(maxContextWindow()),
     DEFAULT_MODEL: defaultModel,
@@ -201,9 +205,11 @@ export function docVars(origin: string): DocVars {
       ? "Arc adds a live estimate of settlement gas to the model cost. The exact USDC amount is in the 402 response."
       : "The final quote includes the configured payment overhead and minimum charge. The exact USDC amount is in the 402 response.",
     DEVELOPER_JAVASCRIPT: developerJavascriptHtml(config.network, chain.assetAddress),
-    OG_DESCRIPTION:
-      `${models.length} GPT models — GPT-5.6 Sol, GPT-5.6 Terra, GPT-6 Luna and GPT-6 Sol — ` +
-      `behind one OpenAI-compatible endpoint. Pay per request in ${chain.asset} on ${chain.label}.`,
+    OG_DESCRIPTION: imagesEnabled
+      ? models.length + ' GPT models and ' + Object.keys(imageRates).length + ' image models for generation and editing. ' +
+        'Pay per request in ' + chain.asset + ' on ' + chain.label + ' with x402.'
+      : models.length + ' GPT models behind one OpenAI-compatible endpoint. ' +
+        'Pay per request in ' + chain.asset + ' on ' + chain.label + ' with x402.',
     YEAR: String(new Date().getUTCFullYear()),
     UPDATED: today,
   };
