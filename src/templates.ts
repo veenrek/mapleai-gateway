@@ -14,6 +14,7 @@ import { config } from "./config.js";
 import { catalog, compactTokens, maxContextWindow, minInputPrice, money } from "./catalog.js";
 import { chainInfo } from "./chain.js";
 import { imageRates, imagesEnabled } from "./images.js";
+import { embeddingModel, embeddingsEnabled } from "./embeddings.js";
 import { jevEnabled, jevModel, jevPricePerMillion } from "./jev.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -198,6 +199,7 @@ export function docVars(origin: string): DocVars {
     AGENT_JEV: jevEnabled ? '## Jev\n\n- ' + jevModel + ': $' + jevPricePerMillion?.toFixed(2) +
       ' per 1M input tokens, output free, plus settlement overhead. POST ' + origin + '/jev uses SystemOne; send model, state and named questions, each with type and instructions. Read answers from the response.\n\n' : '',
     AGENT_JEV_ENDPOINT: jevEnabled ? '| POST | /jev | Jev SystemOne decisions |' : '',
+    AGENT_EMBEDDINGS: embeddingsEnabled ? '## Free Embeddings\n\n- ' + embeddingModel + ': free POST ' + origin + '/v1/embeddings; send input as a string or array of strings.\n\n' : '',
     DEVELOPER_JEV_NAV: jevEnabled ? '<a href="#jev">Jev</a>' : '',
     DEVELOPER_JEV: jevEnabled ? '<section id="jev"><h2>Jev</h2><p class="muted"><code>' + jevModel +
       '</code> evaluates structured questions through SystemOne. $' + jevPricePerMillion?.toFixed(2) +
