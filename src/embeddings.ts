@@ -14,7 +14,7 @@ export function validateEmbedding(req: Request, res: Response, next: NextFunctio
   next();
 }
 
-export async function fetchEmbeddings(body: Record<string, unknown>): Promise<Response> {
+export async function fetchEmbeddings(body: Record<string, unknown>): Promise<globalThis.Response> {
   if (!config.nvidiaApiKey) throw new Error("NVIDIA embeddings credential unavailable");
   return fetch("https://integrate.api.nvidia.com/v1/embeddings", { method: "POST", headers: { authorization: "Bearer " + config.nvidiaApiKey, "content-type": "application/json" }, body: JSON.stringify({ ...body, model: embeddingModel }), signal: AbortSignal.timeout(120_000) });
 }
