@@ -3,6 +3,7 @@ packages/mapleai-mcp/dist/
 packages/mapleai-mcp/package-check/
 packages/mapleai-mcp/*.tgz
 .env
+.secrets/
 *.log
 ledger.jsonl
 payment-events.jsonl
