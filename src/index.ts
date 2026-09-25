@@ -17,6 +17,8 @@ import { estimateOutputTokens, quotePrice, quoteBreakdown } from "./pricing.js";
 import { paymentOverheadUsd } from "./gas.js";
 import { actualCostUsd, extractPayer, parseUsage, parseUsageFromSse, recordUsage } from "./ledger.js";
 import { paymentEventMiddleware } from "./payment-events.js";
+import { fetchUpstreamChat } from "./upstream.js";
+import { fetchImage, imageModels, imageRates, imagesEnabled, quoteImage, validateImage, type ImageKind, type ImageRequest } from "./images.js";
 import {
   toChatRequest,
   toResponsesObject,
@@ -32,7 +34,7 @@ const chain = chainInfo(config.network, config.paymentAssetAddress);
 const app = express();
 app.disable("x-powered-by");
 app.set("trust proxy", true);
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "15mb" }));
 app.use(paymentEventMiddleware);
 
 // ---------------------------------------------------------------------------
@@ -180,23 +182,49 @@ const responsesDiscovery = declareDiscoveryExtension({
 });
 
 /** Every paid route shares one pricing rule; only the discovery shape differs. */
-function paidRoute(description: string, discovery: ReturnType<typeof declareDiscoveryExtension>) {
+function paidRoute(description: string, discovery: ReturnType<typeof declareDiscoveryExtension>, price: DynamicPrice = quotedPrice, includeQuote = true) {
   return {
     accepts: {
       scheme: "exact",
-      price: quotedPrice,
+      price,
       network: config.network,
       payTo: config.payTo,
       maxTimeoutSeconds: 120,
     },
     description,
     mimeType: "application/json",
-    extensions: { quote: {}, ...discovery },
+    extensions: { ...(includeQuote ? { quote: {} } : {}), ...discovery },
   };
 }
 
 const CHAT_DESCRIPTION =
   "OpenAI-compatible chat completion, priced by counted input tokens + max output tokens at per-model rates";
+
+const imageDiscovery = declareDiscoveryExtension({
+  input: { model: imageModels[0] ?? "gpt-image-2.5", size: Object.keys(imageRates[imageModels[0]] ?? {})[0] ?? "1024x1024", n: 1, prompt: "A maple leaf" },
+  inputSchema: { type: "object", required: ["model", "size", "prompt"], properties: {
+    model: { type: "string", enum: imageModels },
+    size: { type: "string" }, n: { type: "integer", minimum: 1, maximum: 4 },
+    prompt: { type: "string" },
+  } },
+  bodyType: "json",
+  output: { example: { created: 1700000000, data: [{ url: "https://example.com/image.png" }] } },
+});
+const editDiscovery = declareDiscoveryExtension({
+  input: { model: imageModels[0] ?? "gpt-image-2.5", size: Object.keys(imageRates[imageModels[0]] ?? {})[0] ?? "1024x1024", n: 1, prompt: "Make the sky blue", image: "data:image/png;base64,iVBORw0KGgo..." },
+  inputSchema: { type: "object", required: ["model", "size", "prompt", "image"], properties: {
+    model: { type: "string", enum: imageModels }, size: { type: "string" },
+    n: { type: "integer", minimum: 1, maximum: 4 }, prompt: { type: "string" },
+    image: { type: "string", description: "PNG, JPEG or WebP data URI, maximum 10 MB" },
+  } },
+  bodyType: "json",
+  output: { example: { created: 1700000000, data: [{ url: "https://example.com/image.png" }] } },
+});
+
+if (imagesEnabled) {
+  app.post("/api/v1/images/generations", validateImage("generation"));
+  app.post("/api/v1/images/image2image", validateImage("edit"));
+}
 
 const PAID_ROUTES = {
   "POST /v1/chat/completions": paidRoute(CHAT_DESCRIPTION, chatDiscovery),
@@ -209,6 +237,10 @@ const PAID_ROUTES = {
     "OpenAI-compatible Responses API (alpha), translated to chat completions upstream",
     responsesDiscovery,
   ),
+  ...(imagesEnabled ? {
+    "POST /api/v1/images/generations": paidRoute("Generate images, priced per image and size", imageDiscovery, (context) => quoteImage(requestBody(context)), false),
+    "POST /api/v1/images/image2image": paidRoute("Edit an image, priced per image and size", editDiscovery, (context) => quoteImage(requestBody(context)), false),
+  } : {}),
 };
 
 app.use(paymentMiddleware(PAID_ROUTES, resourceServer));
@@ -248,13 +280,6 @@ function resolveModel(req: Request, res: Response): string | undefined {
     return undefined;
   }
   return canonical;
-}
-
-function upstreamHeaders(): Record<string, string> {
-  return {
-    "content-type": "application/json",
-    authorization: `Bearer ${config.upstreamApiKey}`,
-  };
 }
 
 function logUsage(record: {
@@ -299,21 +324,13 @@ async function handleChatCompletions(req: Request, res: Response): Promise<void>
   const quotedUsd = await quotePrice(req.body);
 
   try {
-    let upstream = await fetch(`${config.upstreamBaseUrl}/chat/completions`, {
-      method: "POST",
-      headers: upstreamHeaders(),
-      body: buildBody(true),
-    });
+    let upstream = await fetchUpstreamChat(buildBody(true));
 
     // Some OpenAI-compatible providers reject stream_options; retry once without.
     if (upstream.status === 400 && wantsStream) {
       const sniff = await upstream.clone().text();
       if (sniff.includes("stream_options")) {
-        upstream = await fetch(`${config.upstreamBaseUrl}/chat/completions`, {
-          method: "POST",
-          headers: upstreamHeaders(),
-          body: buildBody(false),
-        });
+        upstream = await fetchUpstreamChat(buildBody(false));
       } else {
         res.status(upstream.status).type("application/json").send(sniff);
         return;
@@ -422,11 +439,7 @@ async function handleResponses(req: Request, res: Response): Promise<void> {
   const quotedUsd = await quotePrice(req.body);
 
   try {
-    const upstream = await fetch(`${config.upstreamBaseUrl}/chat/completions`, {
-      method: "POST",
-      headers: upstreamHeaders(),
-      body: JSON.stringify(chatRequest),
-    });
+    const upstream = await fetchUpstreamChat(JSON.stringify(chatRequest));
     const text = await upstream.text();
 
     if (!upstream.ok) {
@@ -474,6 +487,42 @@ async function handleResponses(req: Request, res: Response): Promise<void> {
 }
 
 app.post(["/api/v1/responses", "/v1/responses"], handleResponses);
+
+async function handleImage(req: Request, res: Response, kind: ImageKind): Promise<void> {
+  const image = res.locals.imageRequest as ImageRequest;
+  try {
+    const upstream = await fetchImage(image, kind);
+    const raw = await upstream.text();
+    if (!upstream.ok) {
+      console.error("[images] upstream " + upstream.status + ": " + raw.slice(0, 400));
+      res.status(upstream.status).type("application/json").send(raw);
+      return;
+    }
+    const data: unknown = JSON.parse(raw);
+    if (!data || typeof data !== "object" || !Array.isArray((data as { data?: unknown }).data) ||
+        (data as { data: unknown[] }).data.length !== image.n) {
+      console.error("[images] unexpected upstream response for " + image.model);
+      res.status(502).json({ error: { message: "Unexpected upstream image response" } });
+      return;
+    }
+    const results = (data as { data: Array<{ url?: unknown; b64_json?: unknown }> }).data;
+    if (results.some((item) => !item || (typeof item.url !== "string" && typeof item.b64_json !== "string"))) {
+      res.status(502).json({ error: { message: "Missing image data in upstream response" } });
+      return;
+    }
+    recordUsage({ ts: new Date().toISOString(), model: image.model, payer: extractPayer(req.get("payment-signature")),
+      upstreamStatus: upstream.status, quotedUsd: await quoteImage(req.body) });
+    res.status(200).json(data);
+  } catch (error) {
+    console.error("[images] upstream error:", error);
+    res.status(502).json({ error: { message: "Image request failed" } });
+  }
+}
+
+if (imagesEnabled) {
+  app.post("/api/v1/images/generations", (req, res) => { void handleImage(req, res, "generation"); });
+  app.post("/api/v1/images/image2image", (req, res) => { void handleImage(req, res, "edit"); });
+}
 
 // ---------------------------------------------------------------------------
 // Public documents, rendered from the live catalog
@@ -862,6 +911,26 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
     "200": successfulResponse(responseSchema),
   };
 
+  const imageResponse = {
+    "200": { description: "Generated images", content: { "application/json": { schema: {
+      type: "object", required: ["data"], properties: {
+        created: { type: "integer" }, data: { type: "array", items: { type: "object", properties: {
+          url: { type: "string", format: "uri" }, b64_json: { type: "string" },
+        } } },
+      },
+    } } } },
+    "400": { description: "Invalid image request" },
+    "402": paidResponses["402"],
+    "502": { description: "Image upstream failed" },
+  };
+  const imageBody = (edit: boolean) => ({ required: true, content: { "application/json": { schema: {
+    type: "object", required: edit ? ["model", "size", "prompt", "image"] : ["model", "size", "prompt"],
+    properties: { model: { type: "string", enum: imageModels }, size: { type: "string", description: "A listed size for the selected model" },
+      n: { type: "integer", minimum: 1, maximum: 4, default: 1 }, prompt: { type: "string", maxLength: 4000 },
+      ...(edit ? { image: { type: "string", description: "PNG, JPEG or WebP base64 data URI, maximum 10 MB" } } : {}),
+    },
+  } } } });
+
   res.json({
     openapi: "3.1.0",
     info: {
@@ -906,6 +975,14 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
       },
     },
     paths: {
+      ...(imagesEnabled ? {
+        "/api/v1/images/generations": { post: { summary: "Generate images", operationId: "generateImages", security: [{ x402: [] }],
+          "x-payment-info": { price: { mode: "dynamic", currency: "USD" }, protocols: [{ x402: {} }] },
+          "x-pricing": { unit: "USD per image", models: imageRates }, requestBody: imageBody(false), responses: imageResponse } },
+        "/api/v1/images/image2image": { post: { summary: "Edit an image", operationId: "editImage", security: [{ x402: [] }],
+          "x-payment-info": { price: { mode: "dynamic", currency: "USD" }, protocols: [{ x402: {} }] },
+          "x-pricing": { unit: "USD per image", models: imageRates }, requestBody: imageBody(true), responses: imageResponse } },
+      } : {}),
       "/v1/chat/completions": {
         post: {
           summary: "Create chat completion",

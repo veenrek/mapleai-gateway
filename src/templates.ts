@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { config } from "./config.js";
 import { catalog, compactTokens, maxContextWindow, minInputPrice, money } from "./catalog.js";
 import { chainInfo } from "./chain.js";
+import { imageRates, imagesEnabled } from "./images.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_DIR = join(__dirname, "../templates");
@@ -85,6 +86,13 @@ function developerModelRowsHtml(): string {
   ).join("\n");
 }
 
+function developerImageRowsHtml(): string {
+  return Object.entries(imageRates).flatMap(([model, sizes]) => Object.entries(sizes).map(([size, price]) =>
+    '<tr><th scope="row"><code>' + escapeHtml(model) + '</code></th><td>' + escapeHtml(size) +
+    '</td><td>$' + price.toFixed(4) + '</td></tr>',
+  )).join("\n");
+}
+
 function developerNetworkRowsHtml(currentNetwork: string): string {
   const networks = [
     { name: "Solana", id: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", origin: "https://sol.mapleai.shop" },
@@ -152,6 +160,16 @@ export function docVars(origin: string): DocVars {
     MODELS_LIST: modelListMarkdown(),
     MODELS_TABLE: modelTableMarkdown(),
     DEVELOPER_MODEL_ROWS: developerModelRowsHtml(),
+    DEVELOPER_IMAGES: imagesEnabled ? '<section id="images"><h2>Images</h2><p class="muted">Generate or edit images with x402 USDC payments. The exact quote includes payment overhead.</p>' +
+      '<dl class="endpoint-list"><div><dt>Generate</dt><dd><code>POST /api/v1/images/generations</code></dd></div>' +
+      '<div><dt>Edit</dt><dd><code>POST /api/v1/images/image2image</code></dd></div></dl>' +
+      '<div class="table-scroll"><table><thead><tr><th>Model</th><th>Size</th><th>USD / image</th></tr></thead><tbody>' +
+      developerImageRowsHtml() + '</tbody></table></div>' +
+      '<div class="snippet"><div class="snippet-title">Image request</div><pre><code>curl -i ' + origin + '/api/v1/images/generations \\\n' +
+      '  -H \'content-type: application/json\' \\\n' +
+      '  -d \'{"model":"' + Object.keys(imageRates)[0] + '","size":"' + Object.keys(imageRates[Object.keys(imageRates)[0]])[0] +
+      '","prompt":"A maple leaf","n":1}\'</code></pre></div>' +
+      '<p class="muted">For image2image, add <code>image</code> as a PNG, JPEG or WebP base64 data URI. Both routes return <code>data[].url</code> or <code>data[].b64_json</code>.</p></section>' : "",
     DEVELOPER_NETWORK_ROWS: developerNetworkRowsHtml(config.network),
     PAYMENT_NOTE: config.network === "eip155:5042"
       ? "Arc adds a live estimate of settlement gas to the model cost. The exact USDC amount is in the 402 response."

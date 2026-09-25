@@ -21,7 +21,8 @@ export type PaymentEvent = {
   reason?: string;
 };
 
-const paidPaths = new Set(['/v1/chat/completions', '/api/v1/chat/completions', '/v1/responses', '/api/v1/responses']);
+const paidPaths = new Set(['/v1/chat/completions', '/api/v1/chat/completions', '/v1/responses', '/api/v1/responses',
+  '/api/v1/images/generations', '/api/v1/images/image2image']);
 const eventsFile = process.env.PAYMENT_EVENTS_FILE ?? './payment-events.jsonl';
 
 function clean(value: unknown, max = 160): string | undefined {

@@ -59,6 +59,10 @@ export const config = {
   /** OpenAI-compatible upstream you are reselling access to */
   upstreamBaseUrl: (process.env.UPSTREAM_BASE_URL ?? "https://api.openai.com/v1").replace(/\/$/, ""),
   upstreamApiKey: required("UPSTREAM_API_KEY"),
+  /** Optional second credential for the same upstream, used after auth/quota failures. */
+  backupUpstreamApiKey: process.env.BACKUP_UPSTREAM_API_KEY,
+  /** Dedicated credential for future image routes once the upstream enables access. */
+  imageUpstreamApiKey: process.env.IMAGE_UPSTREAM_API_KEY,
 
   modelPrices: parseModelPrices(process.env.MODEL_PRICES),
   modelMapping: parseModelMapping(process.env.MODEL_MAPPING),
