@@ -13,6 +13,8 @@
 
 {{MODELS_LIST}}
 
+{{AGENT_IMAGES}}
+
 ## Quick Start for AI Agents
 
 The code below shows the request format. A standard OpenAI SDK does not handle x402 payment automatically. Use an x402-aware client to read the 402 challenge, sign it and retry with PAYMENT-SIGNATURE.
@@ -78,6 +80,8 @@ Free list of available models with pricing and context windows.
 | POST | `/api/v1/chat/completions` | OpenAI Chat Completions (alias) |
 | POST | `/api/v1/responses` | OpenAI Responses API (alpha) |
 | POST | `/v1/responses` | OpenAI Responses API (alpha) |
+
+{{AGENT_IMAGE_ENDPOINTS}}
 
 ## Payment Protocol
 1. Send the request without payment

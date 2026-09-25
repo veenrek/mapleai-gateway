@@ -93,6 +93,23 @@ function developerImageRowsHtml(): string {
   )).join("\n");
 }
 
+function imageListMarkdown(): string {
+  return Object.entries(imageRates).flatMap(([model, sizes]) => Object.entries(sizes).map(([size, price]) =>
+    "- " + model + " (" + size + "): $" + price.toFixed(4) + " per image",
+  )).join("\n");
+}
+
+function homeImagesHtml(origin: string): string {
+  if (!imagesEnabled) return "";
+  return '<section id="images"><h2>Images</h2><p class="h2sub">Generate and edit images with a per-image x402 quote.</p>' +
+    '<div class="table-scroll"><table><thead><tr><th>Model</th><th>Size</th><th>USD / image</th></tr></thead><tbody>' +
+    developerImageRowsHtml() + '</tbody></table></div>' +
+    '<p class="image-links"><code>POST /api/v1/images/generations</code><br>' +
+    '<code>POST /api/v1/images/image2image</code><br>' +
+    '<a href="' + origin + '/developers#images">Image API guide</a> | ' +
+    '<a href="' + origin + '/openapi.json">OpenAPI</a></p></section>';
+}
+
 function developerNetworkRowsHtml(currentNetwork: string): string {
   const networks = [
     { name: "Solana", id: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", origin: "https://sol.mapleai.shop" },
@@ -159,6 +176,15 @@ export function docVars(origin: string): DocVars {
     MODELS_GRID: modelGridHtml(),
     MODELS_LIST: modelListMarkdown(),
     MODELS_TABLE: modelTableMarkdown(),
+    HOME_IMAGES: homeImagesHtml(origin),
+    HOME_IMAGE_NAV: imagesEnabled ? '<a href="#images">Images</a>' : '',
+    AGENT_IMAGES: imagesEnabled ? '## Image Models\n\n' + imageListMarkdown() + '\n\n' +
+      'POST ' + origin + '/api/v1/images/generations generates images. POST ' + origin +
+      '/api/v1/images/image2image edits a PNG, JPEG or WebP supplied as a base64 data URI (maximum 10 MB). ' +
+      'Send model, size, prompt and optional n (1-4); edits also require image. ' +
+      'The x402 challenge includes the exact price with payment overhead. Successful responses contain data[].url or data[].b64_json.\n\n' : '',
+    AGENT_IMAGE_ENDPOINTS: imagesEnabled ? '| POST | /api/v1/images/generations | Image generation |\n' +
+      '| POST | /api/v1/images/image2image | Image editing |' : '',
     DEVELOPER_MODEL_ROWS: developerModelRowsHtml(),
     DEVELOPER_IMAGES: imagesEnabled ? '<section id="images"><h2>Images</h2><p class="muted">Generate or edit images with x402 USDC payments. The exact quote includes payment overhead.</p>' +
       '<dl class="endpoint-list"><div><dt>Generate</dt><dd><code>POST /api/v1/images/generations</code></dd></div>' +

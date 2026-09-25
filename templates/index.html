@@ -179,6 +179,12 @@ pre .k { color: #7ee2b8; }
 .models {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;
 }
+.table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+.table-scroll table { width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }
+.table-scroll th, .table-scroll td { padding: 12px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.table-scroll thead th { background: var(--bg-soft); color: var(--fg-muted); font-size: 12px; text-transform: uppercase; }
+.table-scroll tbody tr:last-child th, .table-scroll tbody tr:last-child td { border-bottom: 0; }
+.image-links { margin-top: 18px; font-size: 14px; }
 .model {
   border: 1px solid var(--line); border-radius: 6px; padding: 16px 18px;
   background: var(--bg-card);
@@ -223,6 +229,7 @@ footer a:hover { color: var(--accent); }
     <nav>
       <a href="#quickstart">Quickstart</a>
       <a href="#models">Models</a>
+      {{HOME_IMAGE_NAV}}
       <a href="#payment">Payment</a>
       <a href="/v1/models">API</a>
       <a href="/developers">Developers</a>
@@ -269,6 +276,8 @@ footer a:hover { color: var(--accent); }
       Full catalog with live pricing: <a href="/v1/models">GET /v1/models</a>
     </p>
   </section>
+
+  {{HOME_IMAGES}}
 
   <section id="quickstart">
     <h2>Quickstart</h2>
