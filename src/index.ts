@@ -566,9 +566,13 @@ app.use(
 // ---------------------------------------------------------------------------
 
 app.get("/v1/models", (req: Request, res: Response) => {
+  const imageData = imageModels.flatMap((id) => Object.entries(imageRates[id]).map(([size, price]) => ({
+    id, object: "model", created: 1700000000, owned_by: "mapleai", type: "image",
+    size, pricing: { per_image: price, unit: "USD per image" },
+  })));
   res.json({
     object: "list",
-    data: catalog().map((m) => ({
+    data: [...catalog().map((m) => ({
       id: m.id,
       object: "model",
       created: 1700000000,
@@ -583,7 +587,7 @@ app.get("/v1/models", (req: Request, res: Response) => {
         output: m.pricing.output,
         unit: "USD per 1M tokens",
       },
-    })),
+    })), ...imageData],
     default_price_per_request: config.defaultPrice,
     pricing_unit: "USD per 1M tokens (input/output) or per request",
     minimum_charge_usd: config.minChargeUsd,

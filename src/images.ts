@@ -3,6 +3,7 @@ import { config } from "./config.js";
 import { paymentOverheadUsd } from "./gas.js";
 
 const allowedModels = new Set([
+  "gpt-image-2",
   "gpt-image-2.5", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst",
   "grok-imagine-image", "gpt-image-2-2k", "gpt-image-2-4k",
   "gpt-image-2.5-flare-4k", "gpt-image-2.5-sunburst-2k", "gpt-image-2.5-sunburst-4k",
@@ -16,8 +17,13 @@ function parseRates(raw: string | undefined): Rates {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("IMAGE_PRICES must be an object");
   const rates = value as Rates;
   for (const [model, sizes] of Object.entries(rates)) {
-    if (!allowedModels.has(model) || !sizes || typeof sizes !== "object" || Array.isArray(sizes)) {
+    if (!allowedModels.has(model) || (typeof sizes !== "number" && (!sizes || typeof sizes !== "object" || Array.isArray(sizes)))) {
       throw new Error("Invalid IMAGE_PRICES model: " + model);
+    }
+    if (typeof sizes === "number") {
+      if (!Number.isFinite(sizes) || sizes <= 0) throw new Error("Invalid IMAGE_PRICES rate: " + model);
+      rates[model] = { [defaultSize(model)]: sizes };
+      continue;
     }
     for (const [size, price] of Object.entries(sizes)) {
       if (!/^\d{3,4}x\d{3,4}$/.test(size) || !Number.isFinite(price) || price <= 0) {
@@ -26,6 +32,12 @@ function parseRates(raw: string | undefined): Rates {
     }
   }
   return rates;
+}
+
+function defaultSize(model: string): string {
+  if (model.includes("4k")) return "4096x4096";
+  if (model.includes("2k")) return "2048x2048";
+  return "1024x1024";
 }
 
 export const imageRates = parseRates(process.env.IMAGE_PRICES);
