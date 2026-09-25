@@ -65,6 +65,7 @@ export const config = {
   imageUpstreamApiKey: process.env.IMAGE_UPSTREAM_API_KEY,
   /** Separate credential for the SystemOne-only Jev model. */
   jevUpstreamApiKey: process.env.JEV_UPSTREAM_API_KEY,
+  nvidiaApiKey: process.env.NVIDIA_API_KEY,
 
   modelPrices: parseModelPrices(process.env.MODEL_PRICES),
   modelMapping: parseModelMapping(process.env.MODEL_MAPPING),

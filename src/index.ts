@@ -20,6 +20,7 @@ import { paymentEventMiddleware } from "./payment-events.js";
 import { fetchUpstreamChat } from "./upstream.js";
 import { fetchImage, imageModels, imageRates, imagesEnabled, quoteImage, validateImage, type ImageKind, type ImageRequest } from "./images.js";
 import { fetchJev, jevEnabled, jevModel, jevPricePerMillion, quoteJev, validateJev } from "./jev.js";
+import { embeddingModel, embeddingsEnabled, fetchEmbeddings, validateEmbedding } from "./embeddings.js";
 import {
   toChatRequest,
   toResponsesObject,
@@ -255,6 +256,7 @@ if (imagesEnabled) {
   app.post("/api/v1/images/image2image", validateImage("edit"));
 }
 if (jevEnabled) app.post("/jev", validateJev);
+if (embeddingsEnabled) app.post("/v1/embeddings", validateEmbedding);
 
 const PAID_ROUTES = {
   "POST /v1/chat/completions": paidRoute(CHAT_DESCRIPTION, chatDiscovery),
@@ -580,6 +582,18 @@ if (jevEnabled) app.post("/jev", async (req, res) => {
   }
 });
 
+if (embeddingsEnabled) app.post("/v1/embeddings", async (req, res) => {
+  try {
+    const upstream = await fetchEmbeddings(req.body);
+    const raw = await upstream.text();
+    if (!upstream.ok) { res.status(upstream.status).type("application/json").send(raw); return; }
+    res.status(200).type("application/json").send(raw);
+  } catch (error) {
+    console.error("[embeddings] upstream request failed:", error instanceof Error ? error.name : "unknown");
+    res.status(502).json({ error: { message: "Embeddings request failed", type: "upstream_error" } });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Public documents, rendered from the live catalog
 // ---------------------------------------------------------------------------
@@ -643,7 +657,7 @@ app.get("/v1/models", (req: Request, res: Response) => {
         output: m.pricing.output,
         unit: "USD per 1M tokens",
       },
-    })), ...imageData, ...(jevEnabled ? [{ id: jevModel, object: "model", created: 1700000000,
+    })), ...imageData, ...(embeddingsEnabled ? [{ id: embeddingModel, object: "model", created: 1700000000, owned_by: "nvidia", type: "embedding", pricing: { input: 0, output: 0, unit: "free" }, endpoint: "/v1/embeddings" }] : []), ...(jevEnabled ? [{ id: jevModel, object: "model", created: 1700000000,
       owned_by: "jev", type: "structured_decision", protocols: { primary: "systemone", supported: ["systemone"] },
       endpoint: "/jev", pricing: { input: jevPricePerMillion, output: 0, unit: "USD per 1M tokens" } }] : [])],
     default_price_per_request: config.defaultPrice,
