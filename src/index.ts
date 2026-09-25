@@ -233,15 +233,22 @@ const editDiscovery = declareDiscoveryExtension({
   output: { example: { created: 1700000000, data: [{ url: "https://example.com/image.png" }] } },
 });
 
-const jevExample = { model: jevModel, state: "A customer was charged twice and asks for a refund.",
-  questions: { noul: "Is this about billing?" } };
+const jevExample = { model: jevModel, state: "The customer was charged twice for one order.",
+  questions: { billing: { type: "noul", instructions: "Is this about a billing issue?" } } };
 const jevSchema = { type: "object", required: ["model", "state", "questions"], properties: {
   model: { type: "string", enum: [jevModel], example: jevModel },
   state: { type: "string", example: jevExample.state },
-  questions: { type: "object", example: jevExample.questions, description: "SystemOne noul, choice or score questions" },
+  questions: { type: "object", example: jevExample.questions,
+    description: "Named questions. Each value needs type (noul, choice or score) and instructions.",
+    additionalProperties: { type: "object", required: ["type", "instructions"], properties: {
+      type: { type: "string", enum: ["noul", "choice", "score"] },
+      instructions: { type: "string" },
+    } },
+  },
 } };
 const jevDiscovery = declareDiscoveryExtension({ input: jevExample, inputSchema: jevSchema, bodyType: "json",
-  output: { example: { answers: {} } } });
+  output: { example: { model: "jev-1.13.0", answers: { billing: { type: "noul", noul: 0.98 } },
+    usage: { input_tokens: 282, output_tokens: 20 } } } });
 
 if (imagesEnabled) {
   app.post("/api/v1/images/generations", validateImage("generation"));
@@ -1063,7 +1070,10 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
         "x-payment-info": { price: { mode: "dynamic", currency: "USD" }, protocols: [{ x402: {} }] },
         "x-pricing": { unit: "USD per 1M tokens", input: jevPricePerMillion, output: 0 },
         requestBody: { required: true, content: { "application/json": { example: jevExample, schema: jevSchema } } },
-        responses: { "200": { description: "Structured answers" }, "400": { description: "Invalid request" },
+        responses: { "200": { description: "Structured answers", content: { "application/json": {
+          example: { model: "jev-1.13.0", answers: { billing: { type: "noul", noul: 0.98 } },
+            usage: { input_tokens: 282, output_tokens: 20 } },
+        } } }, "400": { description: "Invalid request" },
           "402": paidResponses["402"], "502": { description: "Upstream unavailable" } },
       } } } : {}),
       "/v1/chat/completions": {
@@ -1197,7 +1207,7 @@ app.get("/llms.txt", (req: Request, res: Response) => {
         "POST " + origin + "/api/v1/images/image2image",
         "  Edit a PNG, JPEG or WebP base64 data URI (paid; maximum 10 MB).",
       ] : []),
-      ...(jevEnabled ? ["", "POST " + origin + "/jev", "  Jev structured decisions ($0.12/1M input tokens plus payment overhead). Send model=jev-latest, state and questions."] : []),
+      ...(jevEnabled ? ["", "POST " + origin + "/jev", "  Jev structured decisions ($" + jevPricePerMillion?.toFixed(2) + "/1M input tokens plus payment overhead). Send model=jev-latest, state and named questions with type and instructions."] : []),
       "",
       "## Available Models",
       "",
@@ -1219,7 +1229,7 @@ app.get("/llms.txt", (req: Request, res: Response) => {
         "",
       ] : []),
       ...(jevEnabled ? ["## Jev", "", "- jev-latest: $" + jevPricePerMillion?.toFixed(2) + "/1M input tokens; output tokens free",
-        "- SystemOne only. POST /jev with model, state and questions (noul, choice or score). Read answers from the response.", ""] : []),
+        "- SystemOne only. POST /jev with model, state and named questions; each question needs type (noul, choice or score) and instructions. Read answers from the response.", ""] : []),
       "## Usage",
       "",
       `1. Make a request to ${baseUrl}/chat/completions without payment`,

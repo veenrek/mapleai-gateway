@@ -196,15 +196,15 @@ export function docVars(origin: string): DocVars {
     AGENT_IMAGE_ENDPOINTS: imagesEnabled ? '| POST | /api/v1/images/generations | Image generation |\n' +
       '| POST | /api/v1/images/image2image | Image editing |' : '',
     AGENT_JEV: jevEnabled ? '## Jev\n\n- ' + jevModel + ': $' + jevPricePerMillion?.toFixed(2) +
-      ' per 1M input tokens, output free, plus settlement overhead. POST ' + origin + '/jev uses SystemOne; send model, state and questions with noul, choice or score. Read answers from the response.\n\n' : '',
+      ' per 1M input tokens, output free, plus settlement overhead. POST ' + origin + '/jev uses SystemOne; send model, state and named questions, each with type and instructions. Read answers from the response.\n\n' : '',
     AGENT_JEV_ENDPOINT: jevEnabled ? '| POST | /jev | Jev SystemOne decisions |' : '',
     DEVELOPER_JEV_NAV: jevEnabled ? '<a href="#jev">Jev</a>' : '',
     DEVELOPER_JEV: jevEnabled ? '<section id="jev"><h2>Jev</h2><p class="muted"><code>' + jevModel +
       '</code> evaluates structured questions through SystemOne. $' + jevPricePerMillion?.toFixed(2) +
       ' per 1M input tokens; output tokens are free. The x402 challenge includes settlement overhead and the exact amount. This model does not support Chat Completions or Responses.</p>' +
       '<div class="snippet"><div class="snippet-title">Jev request</div><pre><code>POST ' + origin +
-      '/jev\ncontent-type: application/json\n\n{"model":"jev-latest","state":"A customer was charged twice and asks for a refund.","questions":{"noul":"Is this about billing?"}}</code></pre></div>' +
-      '<p class="muted">The JSON response contains <code>answers</code>. Questions may use <code>noul</code>, <code>choice</code> or <code>score</code>.</p></section>' : '',
+      '/jev\ncontent-type: application/json\n\n{"model":"jev-latest","state":"The customer was charged twice for one order.","questions":{"billing":{"type":"noul","instructions":"Is this about a billing issue?"}}}</code></pre></div>' +
+      '<p class="muted">The JSON response contains <code>answers.billing</code>. Each named question uses a <code>type</code> of <code>noul</code>, <code>choice</code> or <code>score</code> and its own <code>instructions</code>.</p></section>' : '',
     DEVELOPER_MODEL_ROWS: developerModelRowsHtml(),
     DEVELOPER_IMAGES: imagesEnabled ? '<section id="images"><h2>Images</h2><p class="muted">Generate or edit images with x402 USDC payments. The exact quote includes payment overhead.</p>' +
       '<dl class="endpoint-list"><div><dt>Generate</dt><dd><code>POST /api/v1/images/generations</code></dd></div>' +

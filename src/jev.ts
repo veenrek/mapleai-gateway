@@ -24,10 +24,15 @@ export function validateJev(req: Request, res: Response, next: NextFunction): vo
   const body = req.body;
   const questions = body?.questions;
   if (!body || typeof body !== "object" || Array.isArray(body) || body.model !== jevModel ||
-      body.state === undefined || body.state === null ||
+      typeof body.state !== "string" || body.state.trim().length === 0 ||
       !questions || typeof questions !== "object" || Array.isArray(questions) ||
-      !["noul", "choice", "score"].some((kind) => Object.hasOwn(questions, kind))) {
-    res.status(400).json({ error: { message: "Expected model=jev-latest, state and questions with noul, choice or score", type: "invalid_request" } });
+      Object.keys(questions).length === 0 ||
+      Object.entries(questions).some(([name, value]) => !name.trim() || !value ||
+        typeof value !== "object" || Array.isArray(value) ||
+        !["noul", "choice", "score"].includes((value as { type?: unknown }).type as string) ||
+        typeof (value as { instructions?: unknown }).instructions !== "string" ||
+        !(value as { instructions: string }).instructions.trim())) {
+    res.status(400).json({ error: { message: "Expected model=jev-latest, nonempty state, and named questions with type and instructions", type: "invalid_request" } });
     return;
   }
   next();
