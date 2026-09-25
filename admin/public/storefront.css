@@ -1,0 +1,301 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   AI TOKEN MARKET — standalone storefront theme
+   Self-contained: no dependency on app tokens or build pipeline.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --bg: #06080f;
+  --bg-glow-1: rgba(124, 58, 237, 0.16);
+  --bg-glow-2: rgba(6, 182, 212, 0.1);
+  --card: #0d1322;
+  --card-hover: #131b2e;
+  --border: #1c2740;
+  --border-bright: #2c3a5c;
+  --text: #eef2f8;
+  --muted: #8b98ad;
+  --accent-a: #8b5cf6;
+  --accent-b: #22d3ee;
+  --green: #34d399;
+  --amber: #fbbf24;
+  --red: #f87171;
+  --radius: 14px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+}
+
+.mk {
+  min-height: 100vh;
+  background:
+    radial-gradient(900px 500px at 15% -10%, var(--bg-glow-1), transparent),
+    radial-gradient(800px 460px at 90% -5%, var(--bg-glow-2), transparent), var(--bg);
+  color: var(--text);
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+.wrap {
+  max-width: 1060px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────── */
+.hd {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  backdrop-filter: blur(14px);
+  background: rgba(6, 8, 15, 0.78);
+  border-bottom: 1px solid var(--border);
+}
+.hd-in {
+  max-width: 1060px;
+  margin: 0 auto;
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.brand {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  background: linear-gradient(100deg, var(--accent-a), var(--accent-b));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.hd-links {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.hd-link {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 13.5px;
+  transition: color 0.15s;
+}
+.hd-link:hover {
+  color: var(--text);
+}
+
+/* ── Hero ────────────────────────────────────────────────────────────── */
+.hero {
+  padding: 64px 0 40px;
+}
+.hero h1 {
+  font-size: clamp(30px, 5vw, 44px);
+  font-weight: 800;
+  line-height: 1.12;
+  letter-spacing: -0.03em;
+  max-width: 640px;
+  background: linear-gradient(115deg, #fff 30%, #b9c5e8);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.hero p {
+  margin-top: 14px;
+  max-width: 560px;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+/* ── Sections ────────────────────────────────────────────────────────── */
+.section-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 40px 0 18px;
+}
+
+/* ── Lot card ────────────────────────────────────────────────────────── */
+.lots {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+.lot {
+  background: linear-gradient(180deg, var(--card), #0b101d);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  transition:
+    transform 0.18s,
+    border-color 0.18s,
+    box-shadow 0.18s;
+}
+.lot:hover {
+  transform: translateY(-3px);
+  border-color: var(--border-bright);
+  box-shadow: 0 12px 40px -18px rgba(124, 58, 237, 0.45);
+}
+.lot-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+.lot-model {
+  font-family: ui-monospace, monospace;
+  font-weight: 600;
+  font-size: 14px;
+  word-break: break-all;
+}
+.pill {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(52, 211, 153, 0.12);
+  color: var(--green);
+  white-space: nowrap;
+}
+.seller {
+  font-size: 12px;
+  color: var(--muted);
+}
+.prices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.price-box {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.price-box .lbl {
+  font-size: 11px;
+  color: var(--muted);
+}
+.price-box .val {
+  font-size: 16px;
+  font-weight: 700;
+  margin-top: 2px;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 10px;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition:
+    filter 0.15s,
+    opacity 0.15s;
+  text-decoration: none;
+}
+.btn:hover {
+  filter: brightness(1.12);
+}
+.btn[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn-grad {
+  background: linear-gradient(100deg, var(--accent-a), var(--accent-b));
+  color: #fff;
+}
+.btn-ghost {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border-bright);
+}
+.btn-ghost:hover {
+  border-color: var(--muted);
+}
+.btn-sm {
+  padding: 7px 14px;
+  font-size: 13px;
+}
+
+/* ── Panels / forms ──────────────────────────────────────────────────── */
+.panel {
+  background: linear-gradient(180deg, var(--card), #0b101d);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+}
+.panel h2 {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 14px;
+}
+.hint {
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.input {
+  width: 100%;
+  border-radius: 10px;
+  padding: 11px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.input:focus {
+  border-color: var(--accent-a);
+}
+.mono {
+  font-family: ui-monospace, monospace;
+}
+.err {
+  color: var(--red);
+  font-size: 13px;
+}
+.ok {
+  color: var(--green);
+  font-size: 13px;
+}
+.muted {
+  color: var(--muted);
+}
+.center {
+  text-align: center;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.spacer {
+  flex: 1;
+}
+.mt {
+  margin-top: 16px;
+}
+.grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}

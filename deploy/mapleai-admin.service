@@ -1,0 +1,15 @@
+[Unit]
+Description=MapleAI prepaid admin and marketplace
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/mapleai-admin
+ExecStart=/opt/node22/bin/node scripts/dev/run-next.mjs start
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
