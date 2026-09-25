@@ -955,9 +955,9 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
   };
   const imageBody = (edit: boolean) => ({ required: true, content: { "application/json": { example: edit ? imageEditExample : imageExample, schema: {
     type: "object", required: edit ? ["model", "size", "prompt", "image"] : ["model", "size", "prompt"],
-    properties: { model: { type: "string", enum: imageModels }, size: { type: "string", description: "A listed size for the selected model" },
-      n: { type: "integer", minimum: 1, maximum: 4, default: 1 }, prompt: { type: "string", maxLength: 4000 },
-      ...(edit ? { image: { type: "string", description: "PNG, JPEG or WebP base64 data URI, maximum 10 MB" } } : {}),
+    properties: { model: { type: "string", enum: imageModels }, size: { type: "string", example: imageExampleSize, description: "A listed size for the selected model" },
+      n: { type: "integer", minimum: 1, maximum: 4, default: 1 }, prompt: { type: "string", example: imageExample.prompt, maxLength: 4000 },
+      ...(edit ? { image: { type: "string", example: imageEditExample.image, description: "PNG, JPEG or WebP base64 data URI, maximum 10 MB" } } : {}),
     },
   } } } });
 
