@@ -594,7 +594,13 @@ if (embeddingsEnabled) app.post("/v1/embeddings", async (req, res) => {
     res.status(502).json({ error: { message: "Embeddings request failed", type: "upstream_error" } });
   }
 });
-if (embeddingsEnabled) app.get("/api/v1/embeddings/stats", (_req, res) => res.json({ object: "embedding_stats", model: embeddingModel, ...embeddingStats() }));
+if (embeddingsEnabled) app.get("/api/v1/embeddings/stats", (req, res) => {
+  const expected = config.embeddingStatsToken;
+  const supplied = req.get("x-embedding-stats-token");
+  if (!expected || supplied !== expected) { res.status(404).json({ error: { message: "Not found" } }); return; }
+  res.setHeader("cache-control", "no-store");
+  res.json({ object: "embedding_stats", model: embeddingModel, ...embeddingStats() });
+});
 
 // ---------------------------------------------------------------------------
 // Public documents, rendered from the live catalog
