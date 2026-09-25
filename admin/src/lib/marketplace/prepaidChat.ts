@@ -85,6 +85,9 @@ export async function handlePrepaidChatCompletion(
   }
 
   const publicModel = body.model.trim();
+  if (publicModel === "jev-latest" || publicModel.startsWith("gpt-image-") || publicModel === "grok-imagine-image") {
+    return marketplaceError(403, "Prepaid keys are not available for this model", "forbidden");
+  }
 
   // Kill switch: global is already checked in the route layer; enforce the
   // scoped (model) level here where the resolved model name is known.

@@ -29,6 +29,9 @@ const issueSchema = z.object({
   expiresInDays: z.number().int().positive().max(3650).optional(),
 });
 
+// Prepaid token budgets currently cover chat/text models only.
+const PREPAID_DISABLED_MODELS = new Set(["jev-latest", "gpt-image-2", "gpt-image-2.5", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst", "grok-imagine-image", "gpt-image-2-2k", "gpt-image-2-4k", "gpt-image-2.5-flare-4k", "gpt-image-2.5-sunburst-2k", "gpt-image-2.5-sunburst-4k"]);
+
 /** Storefront catalog models owned by the given provider (or all combos). */
 async function getCatalogModelsForScope(
   request: Request,
@@ -105,6 +108,10 @@ export async function POST(request: Request) {
   }
   if (!allowedModels || allowedModels.length === 0) {
     return marketplaceError(400, "Select a provider or combo, or provide a model list");
+  }
+  const prepaidDisabled = allowedModels.filter((model) => PREPAID_DISABLED_MODELS.has(model));
+  if (prepaidDisabled.length > 0) {
+    return marketplaceError(400, `Prepaid keys are not available for: ${prepaidDisabled.join(", ")}`);
   }
 
   const expiresAt = expiresInDays
