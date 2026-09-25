@@ -14,6 +14,7 @@
 {{MODELS_LIST}}
 
 {{AGENT_IMAGES}}
+{{AGENT_JEV}}
 
 ## Quick Start for AI Agents
 
@@ -82,6 +83,7 @@ Free list of available models with pricing and context windows.
 | POST | `/v1/responses` | OpenAI Responses API (alpha) |
 
 {{AGENT_IMAGE_ENDPOINTS}}
+{{AGENT_JEV_ENDPOINT}}
 
 ## Payment Protocol
 1. Send the request without payment

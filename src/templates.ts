@@ -14,6 +14,7 @@ import { config } from "./config.js";
 import { catalog, compactTokens, maxContextWindow, minInputPrice, money } from "./catalog.js";
 import { chainInfo } from "./chain.js";
 import { imageRates, imagesEnabled } from "./images.js";
+import { jevEnabled, jevModel, jevPricePerMillion } from "./jev.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_DIR = join(__dirname, "../templates");
@@ -169,10 +170,11 @@ export function docVars(origin: string): DocVars {
     PAY_TO: config.payTo,
     CONTACT_EMAIL: config.contactEmail,
     MODEL_COUNT: String(models.length),
-    IMAGE_FEATURE: imagesEnabled ? ', "' + Object.keys(imageRates).length + ' image models"' : '',
-    HOME_MODEL_SUMMARY: imagesEnabled
-      ? models.length + ' GPT models and ' + Object.keys(imageRates).length + ' image models for generation and editing.'
-      : models.length + ' GPT models behind one OpenAI-compatible endpoint.',
+    IMAGE_FEATURE: (imagesEnabled ? ', "' + Object.keys(imageRates).length + ' image models"' : '') +
+      (jevEnabled ? ', "Jev structured decisions"' : ''),
+    HOME_MODEL_SUMMARY: models.length + ' GPT models behind one OpenAI-compatible endpoint.' +
+      (imagesEnabled ? ' ' + Object.keys(imageRates).length + ' image models for generation and editing.' : '') +
+      (jevEnabled ? ' Jev structured decisions via a separate SystemOne endpoint.' : ''),
     MIN_PRICE: money(minPrice),
     MAX_CONTEXT: compactTokens(maxContextWindow()),
     DEFAULT_MODEL: defaultModel,
@@ -182,6 +184,10 @@ export function docVars(origin: string): DocVars {
     MODELS_TABLE: modelTableMarkdown(),
     HOME_IMAGES: homeImagesHtml(origin),
     HOME_IMAGE_NAV: imagesEnabled ? '<a href="#images">Images</a>' : '',
+    HOME_JEV_NAV: jevEnabled ? '<a href="#jev">Jev</a>' : '',
+    HOME_JEV: jevEnabled ? '<section id="jev"><h2>Jev</h2><p class="h2sub">Structured decisions with ' + jevModel +
+      ' via SystemOne. $' + jevPricePerMillion?.toFixed(2) + ' per 1M input tokens; output tokens are free.</p><p><code>POST /jev</code> &nbsp; <a href="' +
+      origin + '/developers#jev">Jev API guide</a></p></section>' : '',
     AGENT_IMAGES: imagesEnabled ? '## Image Models\n\n' + imageListMarkdown() + '\n\n' +
       'POST ' + origin + '/api/v1/images/generations generates images. POST ' + origin +
       '/api/v1/images/image2image edits a PNG, JPEG or WebP supplied as a base64 data URI (maximum 10 MB). ' +
@@ -189,6 +195,16 @@ export function docVars(origin: string): DocVars {
       'The x402 challenge includes the exact price with payment overhead. Successful responses contain data[].url or data[].b64_json.\n\n' : '',
     AGENT_IMAGE_ENDPOINTS: imagesEnabled ? '| POST | /api/v1/images/generations | Image generation |\n' +
       '| POST | /api/v1/images/image2image | Image editing |' : '',
+    AGENT_JEV: jevEnabled ? '## Jev\n\n- ' + jevModel + ': $' + jevPricePerMillion?.toFixed(2) +
+      ' per 1M input tokens, output free, plus settlement overhead. POST ' + origin + '/jev uses SystemOne; send model, state and questions with noul, choice or score. Read answers from the response.\n\n' : '',
+    AGENT_JEV_ENDPOINT: jevEnabled ? '| POST | /jev | Jev SystemOne decisions |' : '',
+    DEVELOPER_JEV_NAV: jevEnabled ? '<a href="#jev">Jev</a>' : '',
+    DEVELOPER_JEV: jevEnabled ? '<section id="jev"><h2>Jev</h2><p class="muted"><code>' + jevModel +
+      '</code> evaluates structured questions through SystemOne. $' + jevPricePerMillion?.toFixed(2) +
+      ' per 1M input tokens; output tokens are free. The x402 challenge includes settlement overhead and the exact amount. This model does not support Chat Completions or Responses.</p>' +
+      '<div class="snippet"><div class="snippet-title">Jev request</div><pre><code>POST ' + origin +
+      '/jev\ncontent-type: application/json\n\n{"model":"jev-latest","state":"A customer was charged twice and asks for a refund.","questions":{"noul":"Is this about billing?"}}</code></pre></div>' +
+      '<p class="muted">The JSON response contains <code>answers</code>. Questions may use <code>noul</code>, <code>choice</code> or <code>score</code>.</p></section>' : '',
     DEVELOPER_MODEL_ROWS: developerModelRowsHtml(),
     DEVELOPER_IMAGES: imagesEnabled ? '<section id="images"><h2>Images</h2><p class="muted">Generate or edit images with x402 USDC payments. The exact quote includes payment overhead.</p>' +
       '<dl class="endpoint-list"><div><dt>Generate</dt><dd><code>POST /api/v1/images/generations</code></dd></div>' +
@@ -205,11 +221,10 @@ export function docVars(origin: string): DocVars {
       ? "Arc adds a live estimate of settlement gas to the model cost. The exact USDC amount is in the 402 response."
       : "The final quote includes the configured payment overhead and minimum charge. The exact USDC amount is in the 402 response.",
     DEVELOPER_JAVASCRIPT: developerJavascriptHtml(config.network, chain.assetAddress),
-    OG_DESCRIPTION: imagesEnabled
-      ? models.length + ' GPT models and ' + Object.keys(imageRates).length + ' image models for generation and editing. ' +
-        'Pay per request in ' + chain.asset + ' on ' + chain.label + ' with x402.'
-      : models.length + ' GPT models behind one OpenAI-compatible endpoint. ' +
-        'Pay per request in ' + chain.asset + ' on ' + chain.label + ' with x402.',
+    OG_DESCRIPTION: models.length + ' GPT models' +
+      (imagesEnabled ? ', ' + Object.keys(imageRates).length + ' image models' : '') +
+      (jevEnabled ? ', and Jev structured decisions' : '') +
+      '. Pay per request in ' + chain.asset + ' on ' + chain.label + ' with x402.',
     YEAR: String(new Date().getUTCFullYear()),
     UPDATED: today,
   };

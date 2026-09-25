@@ -19,6 +19,7 @@ import { actualCostUsd, extractPayer, parseUsage, parseUsageFromSse, recordUsage
 import { paymentEventMiddleware } from "./payment-events.js";
 import { fetchUpstreamChat } from "./upstream.js";
 import { fetchImage, imageModels, imageRates, imagesEnabled, quoteImage, validateImage, type ImageKind, type ImageRequest } from "./images.js";
+import { fetchJev, jevEnabled, jevModel, jevPricePerMillion, quoteJev, validateJev } from "./jev.js";
 import {
   toChatRequest,
   toResponsesObject,
@@ -121,7 +122,8 @@ resourceServer.registerExtension({
   },
 });
 
-const CATALOG_SUMMARY = () => `${catalog().length} GPT models, OpenAI-compatible`;
+const CATALOG_SUMMARY = () => `${catalog().length} GPT models, ${imageModels.length} image models` +
+  (jevEnabled ? ", Jev structured decisions" : "") + `; x402 on ${chain.networkName}`;
 
 const chatDiscovery = declareDiscoveryExtension({
   input: {
@@ -231,10 +233,21 @@ const editDiscovery = declareDiscoveryExtension({
   output: { example: { created: 1700000000, data: [{ url: "https://example.com/image.png" }] } },
 });
 
+const jevExample = { model: jevModel, state: "A customer was charged twice and asks for a refund.",
+  questions: { noul: "Is this about billing?" } };
+const jevSchema = { type: "object", required: ["model", "state", "questions"], properties: {
+  model: { type: "string", enum: [jevModel], example: jevModel },
+  state: { type: "string", example: jevExample.state },
+  questions: { type: "object", example: jevExample.questions, description: "SystemOne noul, choice or score questions" },
+} };
+const jevDiscovery = declareDiscoveryExtension({ input: jevExample, inputSchema: jevSchema, bodyType: "json",
+  output: { example: { answers: {} } } });
+
 if (imagesEnabled) {
   app.post("/api/v1/images/generations", validateImage("generation"));
   app.post("/api/v1/images/image2image", validateImage("edit"));
 }
+if (jevEnabled) app.post("/jev", validateJev);
 
 const PAID_ROUTES = {
   "POST /v1/chat/completions": paidRoute(CHAT_DESCRIPTION, chatDiscovery),
@@ -251,6 +264,8 @@ const PAID_ROUTES = {
     "POST /api/v1/images/generations": paidRoute("Generate images, priced per image and size", imageDiscovery, (context) => quoteImage(requestBody(context)), false),
     "POST /api/v1/images/image2image": paidRoute("Edit an image, priced per image and size", editDiscovery, (context) => quoteImage(requestBody(context)), false),
   } : {}),
+  ...(jevEnabled ? { "POST /jev": paidRoute("Jev structured decisions via SystemOne, priced by input tokens",
+    jevDiscovery, (context) => quoteJev(requestBody(context) as { state: unknown; questions: unknown }), false) } : {}),
 };
 
 app.use(paymentMiddleware(PAID_ROUTES, resourceServer));
@@ -534,6 +549,30 @@ if (imagesEnabled) {
   app.post("/api/v1/images/image2image", (req, res) => { void handleImage(req, res, "edit"); });
 }
 
+if (jevEnabled) app.post("/jev", async (req, res) => {
+  try {
+    const upstream = await fetchJev(req.body);
+    const raw = await upstream.text();
+    if (!upstream.ok) {
+      console.error("[jev] upstream HTTP " + upstream.status);
+      res.status(upstream.status).type("application/json").send(raw);
+      return;
+    }
+    let data: unknown;
+    try { data = JSON.parse(raw); } catch { data = undefined; }
+    if (!data || typeof data !== "object" || !("answers" in data)) {
+      res.status(502).json({ error: { message: "Unexpected Jev response", type: "upstream_error" } });
+      return;
+    }
+    recordUsage({ ts: new Date().toISOString(), model: jevModel,
+      payer: extractPayer(req.get("payment-signature")), upstreamStatus: upstream.status, quotedUsd: await quoteJev(req.body) });
+    res.status(200).json(data);
+  } catch (error) {
+    console.error("[jev] upstream request failed:", error instanceof Error ? error.name : "unknown");
+    res.status(502).json({ error: { message: "Jev request failed", type: "upstream_error" } });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Public documents, rendered from the live catalog
 // ---------------------------------------------------------------------------
@@ -597,7 +636,9 @@ app.get("/v1/models", (req: Request, res: Response) => {
         output: m.pricing.output,
         unit: "USD per 1M tokens",
       },
-    })), ...imageData],
+    })), ...imageData, ...(jevEnabled ? [{ id: jevModel, object: "model", created: 1700000000,
+      owned_by: "jev", type: "structured_decision", protocols: { primary: "systemone", supported: ["systemone"] },
+      endpoint: "/jev", pricing: { input: jevPricePerMillion, output: 0, unit: "USD per 1M tokens" } }] : [])],
     default_price_per_request: config.defaultPrice,
     pricing_unit: "USD per 1M tokens (input/output) or per request",
     minimum_charge_usd: config.minChargeUsd,
@@ -664,6 +705,8 @@ app.get("/.well-known/x402", (req: Request, res: Response) => {
           exampleBody: imageEditExample,
         },
       ] : []),
+      ...(jevEnabled ? [{ method: "POST", path: "/jev", description: "Jev structured decisions",
+        pricedBy: "input tokens plus payment overhead", exampleBody: jevExample }] : []),
       {
         method: "GET",
         path: "/v1/models",
@@ -967,8 +1010,9 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
       title: config.serviceName,
       version: "1.0.0",
       description:
-        `Pay-per-request GPT access via the x402 protocol on ${chain.networkName}. ` +
-        `${models.length} models behind one OpenAI-compatible endpoint; no accounts, no API keys.`,
+        `Pay-per-request API access via x402 on ${chain.networkName}. ` +
+        `${models.length} GPT models, ${imageModels.length} image models` +
+        (jevEnabled ? ", and Jev structured decisions" : "") + "; no accounts or client API keys.",
       contact: {
         name: config.serviceName,
         email: config.contactEmail,
@@ -1013,6 +1057,15 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
           "x-payment-info": { price: { mode: "dynamic", currency: "USD" }, protocols: [{ x402: {} }] },
           "x-pricing": { unit: "USD per image", models: imageRates }, requestBody: imageBody(true), responses: imageResponse } },
       } : {}),
+      ...(jevEnabled ? { "/jev": { post: { summary: "Run Jev structured decision", operationId: "runJev",
+        description: "SystemOne protocol for jev-latest. Returns structured answers, not chat text.",
+        security: [{ x402: [] }],
+        "x-payment-info": { price: { mode: "dynamic", currency: "USD" }, protocols: [{ x402: {} }] },
+        "x-pricing": { unit: "USD per 1M tokens", input: jevPricePerMillion, output: 0 },
+        requestBody: { required: true, content: { "application/json": { example: jevExample, schema: jevSchema } } },
+        responses: { "200": { description: "Structured answers" }, "400": { description: "Invalid request" },
+          "402": paidResponses["402"], "502": { description: "Upstream unavailable" } },
+      } } } : {}),
       "/v1/chat/completions": {
         post: {
           summary: "Create chat completion",
@@ -1144,6 +1197,7 @@ app.get("/llms.txt", (req: Request, res: Response) => {
         "POST " + origin + "/api/v1/images/image2image",
         "  Edit a PNG, JPEG or WebP base64 data URI (paid; maximum 10 MB).",
       ] : []),
+      ...(jevEnabled ? ["", "POST " + origin + "/jev", "  Jev structured decisions ($0.12/1M input tokens plus payment overhead). Send model=jev-latest, state and questions."] : []),
       "",
       "## Available Models",
       "",
@@ -1164,6 +1218,8 @@ app.get("/llms.txt", (req: Request, res: Response) => {
         "The x402 challenge includes payment overhead. Successful responses contain data[].url or data[].b64_json.",
         "",
       ] : []),
+      ...(jevEnabled ? ["## Jev", "", "- jev-latest: $" + jevPricePerMillion?.toFixed(2) + "/1M input tokens; output tokens free",
+        "- SystemOne only. POST /jev with model, state and questions (noul, choice or score). Read answers from the response.", ""] : []),
       "## Usage",
       "",
       `1. Make a request to ${baseUrl}/chat/completions without payment`,
