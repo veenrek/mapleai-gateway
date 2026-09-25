@@ -15,6 +15,7 @@
 
 {{AGENT_IMAGES}}
 {{AGENT_JEV}}
+{{AGENT_EMBEDDINGS}}
 
 ## Quick Start for AI Agents
 
