@@ -69,6 +69,7 @@ export const config = {
   embeddingStatsFile: process.env.EMBEDDING_STATS_FILE ?? "./embedding-events.jsonl",
   embeddingDataFile: process.env.EMBEDDING_DATA_FILE ?? "./embedding-data.jsonl",
   embeddingStatsToken: process.env.EMBEDDING_STATS_TOKEN,
+  infuraProjectId: process.env.INFURA_PROJECT_ID,
 
   modelPrices: parseModelPrices(process.env.MODEL_PRICES),
   modelMapping: parseModelMapping(process.env.MODEL_MAPPING),

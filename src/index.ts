@@ -22,6 +22,7 @@ import { fetchImage, imageModels, imageRates, imagesEnabled, quoteImage, validat
 import { fetchJev, jevEnabled, jevModel, jevPricePerMillion, quoteJev, validateJev } from "./jev.js";
 import { embeddingModel, embeddingsEnabled, fetchEmbeddings, validateEmbedding } from "./embeddings.js";
 import { embeddingStats, recordEmbeddingData, trackEmbeddingRequest } from "./embedding-stats.js";
+import { getNftMetadata, NftError, nftEnabled, nftPrice, nftNetworks, nftExampleAddress, nftDescription, type NftNetwork } from "./nft.js";
 import {
   toChatRequest,
   toResponsesObject,
@@ -269,6 +270,14 @@ if (jevEnabled) app.post("/jev", validateJev);
 if (embeddingsEnabled) app.post("/v1/embeddings", validateEmbedding);
 
 const PAID_ROUTES = {
+  ...(nftEnabled ? Object.fromEntries(Object.keys(nftNetworks).map((network) => [
+    "GET /api/v1/" + network + "/nft/getNFTMetadata",
+    paidRoute(nftDescription, declareDiscoveryExtension({
+      input: { contractAddress: nftExampleAddress },
+      inputSchema: { type: "object", required: ["contractAddress"], properties: { contractAddress: { type: "string", pattern: "^0x[0-9a-fA-F]{40}$" } } },
+      output: { example: { object: "nft_contract_metadata", chainNetwork: network, contractAddress: nftExampleAddress, name: "BoredApeYachtClub", symbol: "BAYC", tokenType: "ERC721" } },
+    }), async () => nftPrice, false),
+  ])) : {}),
   "POST /v1/chat/completions": paidRoute(CHAT_DESCRIPTION, chatDiscovery),
   "POST /api/v1/chat/completions": paidRoute(CHAT_DESCRIPTION, chatDiscovery),
   "POST /api/v1/responses": paidRoute(
@@ -288,6 +297,23 @@ const PAID_ROUTES = {
 };
 
 app.use(paymentMiddleware(PAID_ROUTES, resourceServer));
+
+if (nftEnabled) {
+  for (const network of Object.keys(nftNetworks) as NftNetwork[]) {
+    app.get("/api/v1/" + network + "/nft/getNFTMetadata", async (req, res) => {
+      const address = req.query.contractAddress;
+      if (typeof address !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(address)) {
+        res.status(400).json({ error: { type: "invalid_request", message: "contractAddress must be a 20-byte EVM address" } }); return;
+      }
+      try {
+        res.json(await getNftMetadata(network, address as `0x${string}`));
+      } catch (error) {
+        const known = error instanceof NftError;
+        res.status(known ? error.status : 502).json({ error: { type: "nft_metadata_error", code: known ? error.code : "upstream_unavailable", message: known ? error.message : "NFT metadata provider unavailable" } });
+      }
+    });
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Upstream proxy
@@ -724,6 +750,7 @@ app.get("/.well-known/x402", (req: Request, res: Response) => {
     contact: config.contactEmail,
     minimumChargeUsd: config.minChargeUsd,
     resources: [
+      ...(nftEnabled ? Object.keys(nftNetworks).map((network) => ({ method: "GET", path: "/api/v1/" + network + "/nft/getNFTMetadata", description: nftDescription, price: nftPrice, pricedBy: "per request", exampleQuery: { contractAddress: nftExampleAddress } })) : []),
       resource("POST", "/v1/chat/completions", {}),
       resource("POST", "/api/v1/chat/completions", {}),
       {
@@ -1099,6 +1126,13 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
       },
     },
     paths: {
+      ...(nftEnabled ? Object.fromEntries(Object.keys(nftNetworks).map((network) => ["/api/v1/" + network + "/nft/getNFTMetadata", { get: {
+        summary: "Get NFT contract metadata", description: nftDescription + ". Returns on-chain contract metadata; optional fields are null when unsupported. Does not enumerate wallet NFTs or fetch off-chain token metadata.",
+        operationId: "getNFTMetadata_" + network.replace(/-/g, "_"), security: [{ x402: [] }],
+        "x-payment-info": { price: { mode: "fixed", amount: 0.002, currency: "USD" }, protocols: [{ x402: {} }] },
+        parameters: [{ name: "contractAddress", in: "query", required: true, schema: { type: "string", pattern: "^0x[0-9a-fA-F]{40}$" }, example: nftExampleAddress }],
+        responses: { "200": { description: "On-chain NFT contract metadata" }, "400": { description: "Invalid contract address" }, "402": paidResponses["402"], "404": { description: "Contract not found" }, "502": { description: "Infura unavailable" } },
+      } }])) : {}),
       ...(imagesEnabled ? {
         "/api/v1/images/generations": { post: { summary: "Generate images", operationId: "generateImages", security: [{ x402: [] }],
           "x-payment-info": { price: { mode: "dynamic", currency: "USD" }, protocols: [{ x402: {} }] },
@@ -1253,6 +1287,7 @@ app.get("/llms.txt", (req: Request, res: Response) => {
       ] : []),
      ...(jevEnabled ? ["", "POST " + origin + "/jev", "  Jev structured decisions ($" + jevPricePerMillion?.toFixed(2) + "/1M input tokens plus payment overhead). Send model=jev-latest, state and named questions with type and instructions."] : []),
       ...(embeddingsEnabled ? ["", "POST " + origin + "/v1/embeddings", "  Free NVIDIA embeddings with nvidia/nemotron-3-embed-1b."] : []),
+      ...(nftEnabled ? ["", "GET " + origin + "/api/v1/{chainNetwork}/nft/getNFTMetadata?contractAddress=0x...", "  On-chain NFT contract metadata via Infura; $0.002 USDC per request.", "  Networks: " + Object.keys(nftNetworks).join(", ") + ". Returns name, symbol, contractURI and ERC interface support; unsupported fields are null."] : []),
       "",
       "## Available Models",
       "",

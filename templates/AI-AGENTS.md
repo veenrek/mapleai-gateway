@@ -16,6 +16,7 @@
 {{AGENT_IMAGES}}
 {{AGENT_JEV}}
 {{AGENT_EMBEDDINGS}}
+{{AGENT_NFT}}
 
 ## Quick Start for AI Agents
 

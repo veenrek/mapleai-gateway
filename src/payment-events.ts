@@ -89,7 +89,8 @@ export function paymentEventForResponse(req: Request, res: Response, id: string)
 }
 
 export function paymentEventMiddleware(req: Request, res: Response, next: NextFunction): void {
-  if (req.method !== 'POST' || !paidPaths.has(req.path)) return next();
+  const nftRequest = req.method === 'GET' && /^\/api\/v1\/[^/]+\/nft\/getNFTMetadata$/.test(req.path);
+  if (!nftRequest && (req.method !== 'POST' || !paidPaths.has(req.path))) return next();
   const id = randomUUID();
   res.once('finish', () => {
     const event = paymentEventForResponse(req, res, id);

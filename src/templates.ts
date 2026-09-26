@@ -16,6 +16,7 @@ import { chainInfo } from "./chain.js";
 import { imageRates, imagesEnabled } from "./images.js";
 import { embeddingModel, embeddingsEnabled } from "./embeddings.js";
 import { jevEnabled, jevModel, jevPricePerMillion } from "./jev.js";
+import { nftEnabled, nftNetworks } from "./nft.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_DIR = join(__dirname, "../templates");
@@ -200,6 +201,9 @@ export function docVars(origin: string): DocVars {
       ' per 1M input tokens, output free, plus settlement overhead. POST ' + origin + '/jev uses SystemOne; send model, state and named questions, each with type and instructions. Read answers from the response.\n\n' : '',
     AGENT_JEV_ENDPOINT: jevEnabled ? '| POST | /jev | Jev SystemOne decisions |' : '',
     AGENT_EMBEDDINGS: embeddingsEnabled ? '## Free Embeddings\n\n- ' + embeddingModel + ': free POST ' + origin + '/v1/embeddings; send input as a string or array of strings.\n\n' : '',
+    HOME_NFT: nftEnabled ? '<section id="nft"><h2>NFT contract metadata</h2><p class="h2sub">$0.002 USDC per request. Ethereum, Polygon, Arbitrum, Optimism, Base, Linea and Avalanche.</p><p><code>GET /api/v1/{chainNetwork}/nft/getNFTMetadata</code> &nbsp; <a href="/developers#nft">API guide</a></p></section>' : '',
+    DEVELOPER_NFT: nftEnabled ? '<section id="nft"><h2>NFT contract metadata</h2><p class="muted">$0.002 USDC per request via x402. Reads on-chain contract metadata through Infura. Returns name, symbol, contractURI, tokenType and ERC interface support; unsupported fields are null. Off-chain metadata and wallet holdings are excluded.</p><div class="snippet"><pre><code>GET ' + origin + '/api/v1/ethereum-mainnet/nft/getNFTMetadata?contractAddress=0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D</code></pre></div><p>Networks: ' + Object.keys(nftNetworks).join(', ') + '. The data network is independent of the USDC payment network selected by domain.</p></section>' : '',
+    AGENT_NFT: nftEnabled ? '## NFT Contract Metadata\n\nGET ' + origin + '/api/v1/{chainNetwork}/nft/getNFTMetadata?contractAddress=0x... costs $0.002 USDC per request via x402. Networks: ' + Object.keys(nftNetworks).join(', ') + '. Returns on-chain name, symbol, contractURI, tokenType and ERC interface support; unsupported fields are null. Does not retrieve wallet holdings or off-chain token metadata.\n\n' : '',
     DEVELOPER_JEV_NAV: jevEnabled ? '<a href="#jev">Jev</a>' : '',
     DEVELOPER_JEV: jevEnabled ? '<section id="jev"><h2>Jev</h2><p class="muted"><code>' + jevModel +
       '</code> evaluates structured questions through SystemOne. $' + jevPricePerMillion?.toFixed(2) +
