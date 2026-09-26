@@ -1,7 +1,8 @@
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { config } from "./config.js";
 
-type EmbeddingEvent = { ts: string; domain: string; model?: string; status: number; latencyMs: number };
+type EmbeddingFailure = { source: "validation" | "upstream" | "transport"; reason: string; message?: string };
+type EmbeddingEvent = { ts: string; domain: string; model?: string; status: number; latencyMs: number; failure?: EmbeddingFailure };
 type Bucket = { requests: number; successful: number; errors: number };
 type Stats = { total: number; successful: number; errors: number; byDomain: Record<string, Bucket>; byModel: Record<string, Bucket>; recent: EmbeddingEvent[] };
 
@@ -28,9 +29,9 @@ if (existsSync(config.embeddingStatsFile)) {
   catch (error) { console.error("[embeddings] stats load failed:", error); }
 }
 
-export function trackEmbeddingRequest(req: { get(name: string): string | undefined; body?: { model?: unknown } }, res: { statusCode: number; once(event: string, callback: () => void): void }): void {
+export function trackEmbeddingRequest(req: { get(name: string): string | undefined; body?: { model?: unknown } }, res: { statusCode: number; locals: Record<string, unknown>; once(event: string, callback: () => void): void }): void {
   const started = Date.now();
-  res.once("finish", () => add({ ts: new Date().toISOString(), domain: req.get("host") ?? "unknown", model: typeof req.body?.model === "string" ? req.body.model : undefined, status: res.statusCode, latencyMs: Date.now() - started }, true));
+  res.once("finish", () => add({ ts: new Date().toISOString(), domain: req.get("host") ?? "unknown", model: typeof req.body?.model === "string" ? req.body.model : undefined, status: res.statusCode, latencyMs: Date.now() - started, failure: res.locals.embeddingFailure as EmbeddingFailure | undefined }, true));
 }
 export function embeddingStats() { return JSON.parse(JSON.stringify(stats)) as Stats; }
 

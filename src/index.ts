@@ -37,7 +37,16 @@ const chain = chainInfo(config.network, config.paymentAssetAddress);
 const app = express();
 app.disable("x-powered-by");
 app.set("trust proxy", true);
-app.use(express.json({ limit: "15mb" }));
+if (embeddingsEnabled) app.post("/v1/embeddings", (req, res, next) => { trackEmbeddingRequest(req, res); next(); });
+const parseJson = express.json({ limit: "15mb" });
+app.use((req, res, next) => {
+  parseJson(req, res, (error) => {
+    if (error && req.method === "POST" && req.path === "/v1/embeddings") {
+      res.locals.embeddingFailure = { source: "validation", reason: error.type ?? "invalid_body", message: "Request body could not be parsed" };
+    }
+    next(error);
+  });
+});
 app.use(paymentEventMiddleware);
 
 // ---------------------------------------------------------------------------
@@ -257,7 +266,7 @@ if (imagesEnabled) {
   app.post("/api/v1/images/image2image", validateImage("edit"));
 }
 if (jevEnabled) app.post("/jev", validateJev);
-if (embeddingsEnabled) app.post("/v1/embeddings", (req, res, next) => { trackEmbeddingRequest(req, res); validateEmbedding(req, res, next); });
+if (embeddingsEnabled) app.post("/v1/embeddings", validateEmbedding);
 
 const PAID_ROUTES = {
   "POST /v1/chat/completions": paidRoute(CHAT_DESCRIPTION, chatDiscovery),
@@ -588,10 +597,20 @@ if (embeddingsEnabled) app.post("/v1/embeddings", async (req, res) => {
     const upstream = await fetchEmbeddings(req.body);
     const raw = await upstream.text();
     recordEmbeddingData(req.body, raw, upstream.status, req.get("host") ?? "unknown");
-    if (!upstream.ok) { res.status(upstream.status).type("application/json").send(raw); return; }
+    if (!upstream.ok) {
+      let message = "NVIDIA returned HTTP " + upstream.status;
+      try {
+        const data = JSON.parse(raw);
+        const detail = data.error?.message ?? data.message ?? data.detail;
+        if (typeof detail === "string") message = detail.slice(0, 1000).replace(/Bearer\s+\S+|(?:sk-|nvapi-)[A-Za-z0-9_-]+/gi, "[redacted]");
+      } catch { /* Non-JSON upstream responses retain the HTTP status explanation. */ }
+      res.locals.embeddingFailure = { source: "upstream", reason: "upstream_http_" + upstream.status, message };
+      res.status(upstream.status).type("application/json").send(raw); return;
+    }
     res.status(200).type("application/json").send(raw);
   } catch (error) {
     console.error("[embeddings] upstream request failed:", error instanceof Error ? error.name : "unknown");
+    res.locals.embeddingFailure = { source: "transport", reason: error instanceof Error ? error.name : "unknown", message: "Embeddings upstream connection failed" };
     res.status(502).json({ error: { message: "Embeddings request failed", type: "upstream_error" } });
   }
 });
