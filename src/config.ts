@@ -54,6 +54,7 @@ export const config = {
 
   facilitatorUrl: process.env.FACILITATOR_URL ?? "https://x402.org/facilitator",
   facilitatorToken: process.env.FACILITATOR_TOKEN,
+  facilitatorMode: process.env.FACILITATOR_MODE ?? "http",
   arcRpcUrl: process.env.ARC_RPC_URL ?? "https://rpc.mainnet.arc.io",
 
   /** OpenAI-compatible upstream you are reselling access to */

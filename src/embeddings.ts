@@ -7,15 +7,15 @@ export const embeddingsEnabled = Boolean(config.nvidiaApiKey);
 export function validateEmbedding(req: Request, res: Response, next: NextFunction): void {
   const body = req.body;
   const validInput = typeof body?.input === "string" || (Array.isArray(body?.input) && body.input.length > 0 && body.input.length <= 128 && body.input.every((item: unknown) => typeof item === "string"));
-  if (!body || typeof body !== "object" || Array.isArray(body) || body.model !== embeddingModel || !validInput) {
+  const validModel = body?.model == null || body.model === embeddingModel;
+  if (!body || typeof body !== "object" || Array.isArray(body) || !validModel || !validInput) {
     res.locals.embeddingFailure = {
       source: "validation",
       reason: !body || typeof body !== "object" || Array.isArray(body) ? "invalid_body"
-        : body.model == null ? "missing_model"
-        : body.model !== embeddingModel ? "unsupported_model" : "invalid_input",
-      message: "Expected the NVIDIA embedding model and input text",
+        : !validModel ? "unsupported_model" : "invalid_input",
+      message: !validModel ? `This endpoint only serves ${embeddingModel}` : "input must be a string or a nonempty array of strings",
     };
-    res.status(400).json({ error: { message: "Expected the NVIDIA embedding model and input text", type: "invalid_request" } });
+    res.status(400).json({ error: { message: res.locals.embeddingFailure.message, type: "invalid_request" } });
     return;
   }
   next();

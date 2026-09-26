@@ -1,5 +1,6 @@
 import express, { type Request, type Response } from "express";
 import { paymentMiddleware, x402ResourceServer } from "@x402/express";
+import { createCdpFacilitatorClient, CDP_FACILITATOR_URL } from "@coinbase/cdp-sdk/x402";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { ExactSvmScheme } from "@x402/svm/exact/server";
 import { HTTPFacilitatorClient, type HTTPRequestContext } from "@x402/core/server";
@@ -54,7 +55,7 @@ app.use(paymentEventMiddleware);
 // x402 resource server
 // ---------------------------------------------------------------------------
 
-const facilitator = new HTTPFacilitatorClient({
+const httpFacilitator = new HTTPFacilitatorClient({
   url: config.facilitatorUrl,
   ...(config.facilitatorToken ? {
     createAuthHeaders: async () => {
@@ -63,6 +64,22 @@ const facilitator = new HTTPFacilitatorClient({
     },
   } : {}),
 });
+if (config.facilitatorMode !== "http" && config.facilitatorMode !== "cdp") {
+  throw new Error("FACILITATOR_MODE must be http or cdp");
+}
+const cdpSupportedNetworks = new Set([
+  "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+  "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+  "eip155:8453",
+  "eip155:84532",
+  "eip155:137",
+]);
+if (config.facilitatorMode === "cdp" && !cdpSupportedNetworks.has(config.network)) {
+  throw new Error("CDP facilitator does not support configured network " + config.network);
+}
+const facilitator = config.facilitatorMode === "cdp"
+  ? createCdpFacilitatorClient()
+  : httpFacilitator;
 const evmScheme = new ExactEvmScheme();
 if (config.network === "eip155:5042") {
   evmScheme.registerMoneyParser(async (amount) => ({
@@ -746,7 +763,7 @@ app.get("/.well-known/x402", (req: Request, res: Response) => {
     asset: chain.asset,
     assetAddress: chain.assetAddress,
     payTo: config.payTo,
-    facilitator: config.facilitatorUrl,
+    facilitator: config.facilitatorMode === "cdp" ? CDP_FACILITATOR_URL : config.facilitatorUrl,
     contact: config.contactEmail,
     minimumChargeUsd: config.minChargeUsd,
     resources: [
@@ -781,7 +798,7 @@ app.get("/.well-known/x402", (req: Request, res: Response) => {
           exampleBody: imageEditExample,
         },
       ] : []),
-      ...(embeddingsEnabled ? [{ method: "POST", path: "/v1/embeddings", description: "Free NVIDIA Nemotron embeddings", pricedBy: "free" }] : []),
+      ...(embeddingsEnabled ? [{ method: "POST", path: "/v1/embeddings", description: "Free NVIDIA Nemotron embeddings", pricedBy: "free", exampleBody: { input: "Hello", input_type: "query", encoding_format: "float" } }] : []),
       ...(jevEnabled ? [{ method: "POST", path: "/jev", description: "Jev structured decisions",
         pricedBy: "input tokens plus payment overhead", exampleBody: jevExample }] : []),
       {
@@ -1102,7 +1119,7 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
         asset: chain.asset,
         assetAddress: chain.assetAddress,
         payTo: config.payTo,
-        facilitator: config.facilitatorUrl,
+        facilitator: config.facilitatorMode === "cdp" ? CDP_FACILITATOR_URL : config.facilitatorUrl,
         minimumChargeUsd: config.minChargeUsd,
       },
     },
@@ -1141,7 +1158,7 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
           "x-payment-info": { price: { mode: "dynamic", currency: "USD" }, protocols: [{ x402: {} }] },
           "x-pricing": { unit: "USD per image", models: imageRates }, requestBody: imageBody(true), responses: imageResponse } },
       } : {}),
-      ...(embeddingsEnabled ? { "/v1/embeddings": { post: { summary: "Create free embeddings", operationId: "createEmbeddings", security: [], description: "Free NVIDIA Nemotron embeddings.", requestBody: { required: true, content: { "application/json": { example: { model: embeddingModel, input: "Hello", input_type: "query", encoding_format: "float" } } } }, responses: { "200": { description: "Embedding vectors" }, "400": { description: "Invalid request" }, "502": { description: "NVIDIA upstream failed" } } } } } : {}),
+      ...(embeddingsEnabled ? { "/v1/embeddings": { post: { summary: "Create free embeddings", operationId: "createEmbeddings", security: [], description: `Free NVIDIA Nemotron embeddings. The endpoint uses ${embeddingModel}; model is optional.`, requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["input"], properties: { model: { type: "string", enum: [embeddingModel], description: "Optional; defaults to the only model served by this endpoint." }, input: { oneOf: [{ type: "string" }, { type: "array", minItems: 1, maxItems: 128, items: { type: "string" } }] }, input_type: { type: "string", enum: ["query", "passage"] }, encoding_format: { type: "string", enum: ["float", "base64"] } } }, example: { input: "Hello", input_type: "query", encoding_format: "float" } } } }, responses: { "200": { description: "Embedding vectors" }, "400": { description: "Invalid request" }, "502": { description: "NVIDIA upstream failed" } } } } } : {}),
       ...(jevEnabled ? { "/jev": { post: { summary: "Run Jev structured decision", operationId: "runJev",
         description: "SystemOne protocol for jev-latest. Returns structured answers, not chat text.",
         security: [{ x402: [] }],
@@ -1340,7 +1357,7 @@ app.get("/health", (req: Request, res: Response) => {
     maxContextWindow: maxContextWindow(),
     upstreamHost: new URL(config.upstreamBaseUrl).host,
     upstreamConfigured: config.upstreamApiKey.length > 0,
-    facilitator: config.facilitatorUrl,
+    facilitator: config.facilitatorMode === "cdp" ? CDP_FACILITATOR_URL : config.facilitatorUrl,
     time: new Date().toISOString(),
   });
 });

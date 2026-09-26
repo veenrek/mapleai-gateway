@@ -50,6 +50,15 @@ in this directory. The Apache virtual hosts proxy to port 4024 and the HTTPS
 host forwards X-Forwarded-Proto: https. PayAI reports exact v2 support for
 eip155:137; an actual verify and settle still needs a funded Polygon payer.
 
+## CDP facilitator
+
+Set `FACILITATOR_MODE=cdp` and `CDP_API_KEY_ID` / `CDP_API_KEY_SECRET` on
+Base, Polygon, or Solana gateway instances to use Coinbase's hosted facilitator
+with the existing x402 routes and recipient wallet. This requires CDP API
+credentials and does not require a CDP wallet secret. Arc (eip155:5042) is not
+supported by CDP and must keep its local facilitator. The service rejects CDP
+mode at startup on unsupported networks.
+
 ## Payment accounting
 
 Each gateway appends paid-route events to `payment-events.jsonl` in its
