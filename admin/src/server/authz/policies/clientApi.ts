@@ -53,14 +53,18 @@ export const clientApiPolicy: RoutePolicy = {
     // them here so the pipeline lets the request through; the route layer then
     // dispatches to the prepaid/marketplace billing handler and enforces budget.
     if (bearer.startsWith("oms_buy_")) {
-      const { getMarketplaceBuyerKeyByApiKey } = await import("@/lib/db/marketplace");
+      const { getMarketplaceBuyerKeyByApiKey, findMarketplaceBuyerKeyByApiKeyAnyStatus } =
+        await import("@/lib/db/marketplace");
       const buyerKey = getMarketplaceBuyerKeyByApiKey(bearer);
-      if (!buyerKey || buyerKey.status !== "active") {
+      if (!buyerKey) {
         // The self-service status endpoint must stay reachable for exhausted or
         // disabled keys — that is where the holder learns why the key stopped
         // working. Every other route keeps rejecting non-active keys here.
-        if (buyerKey && ctx.classification.normalizedPath === "/api/v1/prepaid/status") {
-          return allow({ kind: "client_api_key", id: maskKeyId(bearer) });
+        if (ctx.classification.normalizedPath === "/api/v1/prepaid/status") {
+          const anyStatusKey = findMarketplaceBuyerKeyByApiKeyAnyStatus(bearer);
+          if (anyStatusKey) {
+            return allow({ kind: "client_api_key", id: maskKeyId(bearer) });
+          }
         }
         return reject(401, "AUTH_002", "Invalid marketplace buyer key");
       }

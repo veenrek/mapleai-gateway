@@ -1773,3 +1773,14 @@ export function findPrepaidBuyerKeyByNameWithSecret(
   }
   return { buyerKey: buyerKeyFromRow(row), apiKey };
 }
+
+/** Look up a buyer key by raw API key regardless of status (self-service status checks). */
+export function findMarketplaceBuyerKeyByApiKeyAnyStatus(
+  apiKey: string | null | undefined
+): MarketplaceBuyerKey | null {
+  if (!apiKey) return null;
+  const row = getDb()
+    .prepare<BuyerKeyRow>("SELECT * FROM marketplace_buyer_keys WHERE key_hash = ?")
+    .get(hashMarketplaceKey(apiKey));
+  return row ? buyerKeyFromRow(row) : null;
+}
