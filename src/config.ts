@@ -84,9 +84,9 @@ export const config = {
   /** Multiplier on token cost (your margin) */
   priceMarkup: Number(process.env.PRICE_MARKUP ?? 1.25),
   /** Fixed overhead for non-Arc token-priced calls; Arc uses a live gas estimate. */
-  facilitatorFeeUsd: Number(process.env.FACILITATOR_FEE_USD ?? 0.0016),
+  facilitatorFeeUsd: Number(process.env.FACILITATOR_FEE_USD ?? 0.001),
   /** Floor applied to every quote so dust-sized calls still cover settlement */
-  minChargeUsd: Number(process.env.MIN_CHARGE_USD ?? 0.0016),
+  minChargeUsd: Number(process.env.MIN_CHARGE_USD ?? 0.001),
 
   /** JSONL file where per-request usage records are appended */
   ledgerFile: process.env.LEDGER_FILE ?? "./ledger.jsonl",

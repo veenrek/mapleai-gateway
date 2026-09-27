@@ -7,13 +7,12 @@ export const embeddingsEnabled = Boolean(config.nvidiaApiKey);
 export function validateEmbedding(req: Request, res: Response, next: NextFunction): void {
   const body = req.body;
   const validInput = typeof body?.input === "string" || (Array.isArray(body?.input) && body.input.length > 0 && body.input.length <= 128 && body.input.every((item: unknown) => typeof item === "string"));
-  const validModel = body?.model == null || body.model === embeddingModel;
-  if (!body || typeof body !== "object" || Array.isArray(body) || !validModel || !validInput) {
+  if (!body || typeof body !== "object" || Array.isArray(body) || !validInput) {
     res.locals.embeddingFailure = {
       source: "validation",
       reason: !body || typeof body !== "object" || Array.isArray(body) ? "invalid_body"
-        : !validModel ? "unsupported_model" : "invalid_input",
-      message: !validModel ? `This endpoint only serves ${embeddingModel}` : "input must be a string or a nonempty array of strings",
+        : "invalid_input",
+      message: "input must be a string or a nonempty array of strings",
     };
     res.status(400).json({ error: { message: res.locals.embeddingFailure.message, type: "invalid_request" } });
     return;

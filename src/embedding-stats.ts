@@ -32,7 +32,7 @@ if (existsSync(config.embeddingStatsFile)) {
 
 export function trackEmbeddingRequest(req: { get(name: string): string | undefined; body?: { model?: unknown } }, res: { statusCode: number; locals: Record<string, unknown>; once(event: string, callback: () => void): void }): void {
   const started = Date.now();
-  res.once("finish", () => add({ ts: new Date().toISOString(), domain: req.get("host") ?? "unknown", model: typeof req.body?.model === "string" ? req.body.model : embeddingModel, status: res.statusCode, latencyMs: Date.now() - started, failure: res.locals.embeddingFailure as EmbeddingFailure | undefined }, true));
+  res.once("finish", () => add({ ts: new Date().toISOString(), domain: req.get("host") ?? "unknown", model: embeddingModel, status: res.statusCode, latencyMs: Date.now() - started, failure: res.locals.embeddingFailure as EmbeddingFailure | undefined }, true));
 }
 export function embeddingStats() { return JSON.parse(JSON.stringify(stats)) as Stats; }
 
@@ -42,7 +42,7 @@ export function recordEmbeddingData(body: { input?: unknown; model?: unknown }, 
     try { vectors = (JSON.parse(raw) as { data?: Array<{ embedding?: unknown }> }).data?.map((item) => item.embedding); }
     catch { vectors = undefined; }
   }
-  const event = { ts: new Date().toISOString(), domain, model: typeof body.model === "string" ? body.model : embeddingModel, status, input: body.input, vectors };
+  const event = { ts: new Date().toISOString(), domain, model: embeddingModel, status, input: body.input, vectors };
   try { appendFileSync(config.embeddingDataFile, JSON.stringify(event) + "\n", { mode: 0o600 }); }
   catch (error) { console.error("[embeddings] data write failed:", error); }
 }
