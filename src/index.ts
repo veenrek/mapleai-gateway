@@ -634,34 +634,71 @@ async function handleResponses(req: Request, res: Response): Promise<void> {
 
 app.post(["/api/v1/responses", "/v1/responses"], handleResponses);
 
+// Transient upstream failures (rate limits, 5xx, transport errors, malformed
+// success bodies) are retried within the same paid request. With Solana's
+// upfront settlement the client has already paid by the time we call upstream,
+// so a transient blip must not become a paid failure.
+const IMAGE_RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+const IMAGE_MAX_ATTEMPTS = 3;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function handleImage(req: Request, res: Response, kind: ImageKind): Promise<void> {
   const image = res.locals.imageRequest as ImageRequest;
-  try {
-    const upstream = await fetchImage(image, kind);
-    const raw = await upstream.text();
-    if (!upstream.ok) {
-      console.error("[images] upstream " + upstream.status + ": " + raw.slice(0, 400));
-      res.status(upstream.status).type("application/json").send(raw);
+  for (let attempt = 1; attempt <= IMAGE_MAX_ATTEMPTS; attempt++) {
+    const lastAttempt = attempt === IMAGE_MAX_ATTEMPTS;
+    try {
+      const upstream = await fetchImage(image, kind);
+      const raw = await upstream.text();
+      if (!upstream.ok) {
+        if (IMAGE_RETRYABLE_STATUSES.has(upstream.status) && !lastAttempt) {
+          console.warn("[images] upstream " + upstream.status + " for " + image.model + ", retry " + attempt);
+          await sleep(attempt * 2000);
+          continue;
+        }
+        console.error("[images] upstream " + upstream.status + ": " + raw.slice(0, 400));
+        res.status(upstream.status).type("application/json").send(raw);
+        return;
+      }
+      const data: unknown = JSON.parse(raw);
+      if (!data || typeof data !== "object" || !Array.isArray((data as { data?: unknown }).data) ||
+          (data as { data: unknown[] }).data.length !== image.n) {
+        if (!lastAttempt) {
+          console.warn("[images] unexpected upstream response for " + image.model + ", retry " + attempt);
+          await sleep(attempt * 2000);
+          continue;
+        }
+        console.error("[images] unexpected upstream response for " + image.model);
+        res.status(502).json({ error: { message: "Unexpected upstream image response" } });
+        return;
+      }
+      const results = (data as { data: Array<{ url?: unknown; b64_json?: unknown }> }).data;
+      if (results.some((item) => !item || (typeof item.url !== "string" && typeof item.b64_json !== "string"))) {
+        if (!lastAttempt) {
+          console.warn("[images] missing image data for " + image.model + ", retry " + attempt);
+          await sleep(attempt * 2000);
+          continue;
+        }
+        res.status(502).json({ error: { message: "Missing image data in upstream response" } });
+        return;
+      }
+      recordUsage({ ts: new Date().toISOString(), model: image.model, payer: extractPayer(req.get("payment-signature")),
+        upstreamStatus: upstream.status, quotedUsd: await quoteImage(req.body) });
+      res.status(200).json(data);
+      return;
+    } catch (error) {
+      if (!lastAttempt) {
+        console.warn("[images] transport error for " + image.model + ", retry " + attempt + ":",
+          error instanceof Error ? error.name : "unknown");
+        await sleep(attempt * 2000);
+        continue;
+      }
+      console.error("[images] upstream error:", error);
+      res.status(502).json({ error: { message: "Image request failed" } });
       return;
     }
-    const data: unknown = JSON.parse(raw);
-    if (!data || typeof data !== "object" || !Array.isArray((data as { data?: unknown }).data) ||
-        (data as { data: unknown[] }).data.length !== image.n) {
-      console.error("[images] unexpected upstream response for " + image.model);
-      res.status(502).json({ error: { message: "Unexpected upstream image response" } });
-      return;
-    }
-    const results = (data as { data: Array<{ url?: unknown; b64_json?: unknown }> }).data;
-    if (results.some((item) => !item || (typeof item.url !== "string" && typeof item.b64_json !== "string"))) {
-      res.status(502).json({ error: { message: "Missing image data in upstream response" } });
-      return;
-    }
-    recordUsage({ ts: new Date().toISOString(), model: image.model, payer: extractPayer(req.get("payment-signature")),
-      upstreamStatus: upstream.status, quotedUsd: await quoteImage(req.body) });
-    res.status(200).json(data);
-  } catch (error) {
-    console.error("[images] upstream error:", error);
-    res.status(502).json({ error: { message: "Image request failed" } });
   }
 }
 
