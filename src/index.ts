@@ -689,6 +689,12 @@ app.get("/robots.txt", (req, res) => sendDoc(req, res, "robots.txt", "text/plain
 
 app.get("/sitemap.xml", (req, res) => sendDoc(req, res, "sitemap.xml", "application/xml"));
 
+app.use("/examples/embeddings-to-chat", express.static(join(__dirname, "../examples/embeddings-to-chat"), {
+  dotfiles: "deny",
+  index: "index.html",
+  maxAge: "1h",
+}));
+
 // Binary assets (favicon). Documents above are rendered, never served as files.
 app.use(
   express.static(PUBLIC_DIR, {
