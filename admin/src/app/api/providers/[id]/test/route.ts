@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { sanitizeErrorMessage } from "@omniroute/open-sse/utils/error";
 import { isValidationFailure, validateBody } from "@/shared/validation/helpers";
 import {
   getProviderConnectionById,
@@ -885,6 +886,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json(data);
   } catch (error) {
     console.log("Error testing connection:", error);
-    return NextResponse.json({ error: "Test failed" }, { status: 500 });
+    const message = sanitizeErrorMessage(error instanceof Error ? error.message : error)
+      .replace(/https?:\/\/\S+/g, "<url>");
+    return NextResponse.json({ error: message || "Test failed" }, { status: 500 });
   }
 }
