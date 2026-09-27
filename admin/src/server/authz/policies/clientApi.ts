@@ -56,6 +56,12 @@ export const clientApiPolicy: RoutePolicy = {
       const { getMarketplaceBuyerKeyByApiKey } = await import("@/lib/db/marketplace");
       const buyerKey = getMarketplaceBuyerKeyByApiKey(bearer);
       if (!buyerKey || buyerKey.status !== "active") {
+        // The self-service status endpoint must stay reachable for exhausted or
+        // disabled keys — that is where the holder learns why the key stopped
+        // working. Every other route keeps rejecting non-active keys here.
+        if (buyerKey && ctx.classification.normalizedPath === "/api/v1/prepaid/status") {
+          return allow({ kind: "client_api_key", id: maskKeyId(bearer) });
+        }
         return reject(401, "AUTH_002", "Invalid marketplace buyer key");
       }
       return allow({ kind: "client_api_key", id: maskKeyId(bearer) });
