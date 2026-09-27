@@ -421,6 +421,12 @@ export default function ConnectionRow({
   const [balanceOpen, setBalanceOpen] = useState(false);
   const [balanceData, setBalanceData] = useState<Record<string, unknown> | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
+  // Live key check (replaces the Balance button on the NVIDIA page): POSTs to
+  // the connection-test endpoint, which makes a real upstream request.
+  const [testLoading, setTestLoading] = useState(false);
+  const [testResult, setTestResult] = useState<
+    { valid: true; latencyMs?: number } | { valid: false; error: string } | null
+  >(null);
   // Inline usage badge: cheap localOnly fetch on mount (no upstream call).
   const [inlineUsage, setInlineUsage] = useState<{
     tokensUsed?: number;
@@ -736,7 +742,79 @@ export default function ConnectionRow({
               <span className="material-symbols-outlined text-[13px]">shield</span>
               {rateLimitEnabled ? t("rateLimitProtected") : t("rateLimitUnprotected")}
             </button>
-            {providerId && (
+            {providerId === "nvidia" && (
+              <>
+                <span className="text-text-muted/30 select-none">|</span>
+                <button
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    if (testLoading) return;
+                    setTestLoading(true);
+                    setTestResult(null);
+                    try {
+                      const res = await fetch(
+                        `/api/providers/${encodeURIComponent(connection.id ?? "")}/test`,
+                        {
+                          method: "POST",
+                          credentials: "same-origin",
+                          headers: { "content-type": "application/json" },
+                          body: "{}",
+                        }
+                      );
+                      const data = (await res.json().catch(() => null)) as {
+                        valid?: boolean;
+                        error?: string;
+                        latencyMs?: number;
+                      } | null;
+                      if (data?.valid) {
+                        setTestResult({ valid: true, latencyMs: data.latencyMs });
+                      } else {
+                        setTestResult({
+                          valid: false,
+                          error: data?.error || `HTTP ${res.status}`,
+                        });
+                      }
+                    } catch {
+                      setTestResult({ valid: false, error: "network error" });
+                    } finally {
+                      setTestLoading(false);
+                    }
+                  }}
+                  title={
+                    testResult
+                      ? testResult.valid
+                        ? "Key is alive"
+                        : `Test failed: ${testResult.error}`
+                      : "Send a live test request with this key"
+                  }
+                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium transition-all cursor-pointer ${
+                    testResult
+                      ? testResult.valid
+                        ? "bg-emerald-500/15 text-emerald-500 hover:bg-emerald-500/25"
+                        : "bg-red-500/15 text-red-500 hover:bg-red-500/25"
+                      : "bg-black/[0.03] dark:bg-white/[0.03] text-text-muted/50 hover:text-text-muted hover:bg-black/[0.06] dark:hover:bg-white/[0.06]"
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[13px]">
+                    {testLoading
+                      ? "progress_activity"
+                      : testResult
+                        ? testResult.valid
+                          ? "check_circle"
+                          : "error"
+                        : "play_arrow"}
+                  </span>
+                  {testLoading
+                    ? "Testing…"
+                    : testResult
+                      ? testResult.valid
+                        ? `Alive${typeof testResult.latencyMs === "number" ? ` ${testResult.latencyMs}ms` : ""}`
+                        : "Failed"
+                      : "Test"}
+                </button>
+              </>
+            )}
+            {providerId && providerId !== "nvidia" && (
               <>
                 <span className="text-text-muted/30 select-none">|</span>
                 <button
