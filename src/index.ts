@@ -37,6 +37,7 @@ import {
   prepaidCodeModels,
   prepaidCodeOutputExample,
   prepaidCodesEnabled,
+  prepaidStatusUrl,
   quotePrepaidCode,
   validatePrepaidCodePurchase,
 } from "./prepaid-codes.js";
@@ -361,6 +362,7 @@ if (prepaidCodesEnabled) app.post("/prepaid/codes", async (req, res) => {
       model: purchase.model,
       tokens: { total: purchase.tokens, remaining: purchase.tokens },
       api_base: "https://mapleai.shop/v1",
+      status_url: prepaidStatusUrl,
     });
   } catch (error) {
     console.error("[prepaid-codes] issuance failed:", error instanceof Error ? error.message : "unknown");
@@ -1235,7 +1237,9 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
               "Purchases a prepaid bearer API key for https://mapleai.shop/v1. " +
               "The key is limited to the selected model and a total token budget " +
               "in 100000-token steps from 100000 to 1000000. " +
-              "Pricing uses the model input rate plus the network settlement fee.",
+              "Pricing uses the model input rate plus the network settlement fee. " +
+              "Check key usage and status any time: GET https://mapleai.shop/v1/prepaid/status " +
+              "with the prepaid key as the Bearer token.",
             "x-payment-info": { price: { mode: "dynamic", currency: "USD" }, protocols: [{ x402: {} }] },
             "x-pricing": {
               unit: "prepaid token pack",
@@ -1427,6 +1431,16 @@ app.get("/llms.txt", (req: Request, res: Response) => {
      ...(jevEnabled ? ["", "POST " + origin + "/jev", "  Jev structured decisions ($" + jevPricePerMillion?.toFixed(2) + "/1M input tokens plus payment overhead). Send model=jev-latest, state and named questions with type and instructions."] : []),
       ...(embeddingsEnabled ? ["", "POST " + origin + "/v1/embeddings", "  Free NVIDIA embeddings with nvidia/nemotron-3-embed-1b."] : []),
       ...(nftEnabled ? ["", "GET " + origin + "/api/v1/{chainNetwork}/nft/getNFTMetadata?contractAddress=0x...", "  On-chain NFT contract metadata via Infura; $0.002 USDC per request.", "  Networks: " + Object.keys(nftNetworks).join(", ") + ". Returns name, symbol, contractURI and ERC interface support; unsupported fields are null."] : []),
+      ...(prepaidCodesEnabled ? [
+        "",
+        "POST " + origin + "/prepaid/codes",
+        "  Buy a prepaid API key for one GPT model (paid). Budget in 100000-token steps",
+        "  from 100000 to 1000000, priced at the model input rate plus settlement fee.",
+        "  The key works at https://mapleai.shop/v1 (OpenAI-compatible).",
+        "GET https://mapleai.shop/v1/prepaid/status",
+        "  Check prepaid key usage and status (free). Send the prepaid key as the",
+        "  Bearer token; returns valid, reason and tokens total/used/reserved/remaining.",
+      ] : []),
       "",
       "## Available Models",
       "",

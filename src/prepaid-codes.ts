@@ -42,12 +42,15 @@ export const prepaidCodeExample = {
   tokens: 100_000,
 };
 
+export const prepaidStatusUrl = "https://mapleai.shop/v1/prepaid/status";
+
 export const prepaidCodeOutputExample = {
   object: "prepaid_code",
   code: "oms_buy_example",
   model: "openai/gpt-6-luna",
   tokens: { total: 100_000, remaining: 100_000 },
   api_base: "https://mapleai.shop/v1",
+  status_url: prepaidStatusUrl,
 };
 
 export function validatePrepaidCodePurchase(

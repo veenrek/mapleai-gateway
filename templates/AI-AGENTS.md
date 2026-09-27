@@ -17,6 +17,7 @@
 {{AGENT_JEV}}
 {{AGENT_EMBEDDINGS}}
 {{AGENT_NFT}}
+{{AGENT_PREPAID}}
 
 ## Quick Start for AI Agents
 
@@ -86,6 +87,7 @@ Free list of available models with pricing and context windows.
 
 {{AGENT_IMAGE_ENDPOINTS}}
 {{AGENT_JEV_ENDPOINT}}
+{{AGENT_PREPAID_ENDPOINT}}
 
 ## Payment Protocol
 1. Send the request without payment
