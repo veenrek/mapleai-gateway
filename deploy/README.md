@@ -59,6 +59,17 @@ credentials and does not require a CDP wallet secret. Arc (eip155:5042) is not
 supported by CDP and must keep its local facilitator. The service rejects CDP
 mode at startup on unsupported networks.
 
+## Prepaid OpenAI-compatible API
+
+The apex host `https://mapleai.shop/v1` is reserved for admin-issued prepaid
+buyer keys. The Apache apex vhosts proxy `/v1/*` to the admin API and the
+admin service listens on loopback only. Issue a token-budget key in
+Dashboard → Marketplace → Prepaid API keys, selecting a provider or combo.
+Send it as `Authorization: Bearer oms_buy_...`; `GET /v1/models` returns only
+models allowed by that key. Chat Completions and Responses requests using a
+combo name are routed by the combo engine and charged against the key's token
+budget. Requests without a valid prepaid key receive `401`.
+
 ## Payment accounting
 
 Each gateway appends paid-route events to `payment-events.jsonl` in its

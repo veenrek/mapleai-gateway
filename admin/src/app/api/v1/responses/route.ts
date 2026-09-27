@@ -9,6 +9,7 @@ import { authenticateMarketplaceBuyer } from "@/lib/marketplace/auth";
 import { handleMarketplaceChatCompletion } from "@/lib/marketplace/proxyChat";
 import { handlePrepaidChatCompletion } from "@/lib/marketplace/prepaidChat";
 import { marketplaceError } from "@/lib/marketplace/response";
+import { authenticatePrepaidGatewayBuyer, isPrepaidGatewayRequest } from "@/lib/marketplace/prepaidGateway";
 
 // NOTE: We do NOT call initTranslators() here — the translator registry is
 // bootstrapped at module level inside open-sse/translator/index.ts when it
@@ -70,6 +71,11 @@ async function postHandler(request, context) {
   // Marketplace buyer keys (oms_buy_*) — billing pipeline. Prepaid keys settle
   // token budget directly; account-based keys go through listings.
   const authHeader = request.headers.get("authorization") || "";
+  if (isPrepaidGatewayRequest(request)) {
+    const buyerKey = authenticatePrepaidGatewayBuyer(request);
+    if (!buyerKey) return marketplaceError(401, "Invalid prepaid buyer key", "unauthorized");
+    return handlePrepaidChatCompletion(request, buyerKey);
+  }
   if (authHeader.startsWith("Bearer oms_buy_")) {
     const buyerKey = authenticateMarketplaceBuyer(request);
     if (!buyerKey) {

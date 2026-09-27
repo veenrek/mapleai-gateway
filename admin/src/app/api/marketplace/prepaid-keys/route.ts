@@ -3,6 +3,7 @@ import { requireManagementAuth } from "@/lib/api/requireManagementAuth";
 import { createMarketplaceBuyerKey, listPrepaidMarketplaceBuyerKeysWithStats } from "@/lib/db/marketplace";
 import { marketplaceError, marketplaceJson } from "@/lib/marketplace/response";
 import { getUnifiedModelsResponse } from "@/app/api/v1/models/catalog";
+import { getComboById, getComboByName } from "@/lib/localDb";
 import { handleCorsOptions } from "@/shared/utils/cors";
 
 export async function OPTIONS() {
@@ -52,8 +53,10 @@ async function getCatalogModelsForScope(
   };
   const entries = Array.isArray(data.data) ? data.data : [];
   if (scope.comboId) {
+    const combo = (await getComboById(scope.comboId)) ?? (await getComboByName(scope.comboId));
+    const modelId = typeof combo?.name === "string" ? combo.name : scope.comboId;
     return entries
-      .filter((m) => m.owned_by === "combo" && typeof m.id === "string" && m.id === scope.comboId)
+      .filter((m) => m.owned_by === "combo" && typeof m.id === "string" && m.id === modelId)
       .map((m) => m.id as string);
   }
   return entries

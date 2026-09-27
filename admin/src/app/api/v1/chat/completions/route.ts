@@ -8,6 +8,7 @@ import { handleMarketplaceChatCompletion } from "@/lib/marketplace/proxyChat";
 import { handlePrepaidChatCompletion } from "@/lib/marketplace/prepaidChat";
 import { marketplaceError } from "@/lib/marketplace/response";
 import { checkKillSwitch } from "@/server/killSwitch/manager";
+import { authenticatePrepaidGatewayBuyer, isPrepaidGatewayRequest } from "@/lib/marketplace/prepaidGateway";
 
 let initPromise = null;
 
@@ -50,6 +51,11 @@ export async function POST(request) {
   }
 
   const authHeader = request.headers.get("authorization") || "";
+  if (isPrepaidGatewayRequest(request)) {
+    const buyerKey = authenticatePrepaidGatewayBuyer(request);
+    if (!buyerKey) return marketplaceError(401, "Invalid prepaid buyer key", "unauthorized");
+    return handlePrepaidChatCompletion(request, buyerKey);
+  }
   if (authHeader.startsWith("Bearer oms_buy_")) {
     const buyerKey = authenticateMarketplaceBuyer(request);
     if (!buyerKey) {
