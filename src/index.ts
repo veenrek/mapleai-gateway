@@ -13,7 +13,7 @@ type DynamicPrice = (context: HTTPRequestContext) => string | Promise<string>;
 import { config } from "./config.js";
 import { catalog, compactTokens, maxContextWindow, minInputPrice, money } from "./catalog.js";
 import { chainInfo } from "./chain.js";
-import { canonicalModelId, upstreamModelId } from "./models.js";
+import { canonicalModelId, pricingForModel, upstreamModelId } from "./models.js";
 import { estimateOutputTokens, quotePrice, quoteBreakdown } from "./pricing.js";
 import { paymentOverheadUsd } from "./gas.js";
 import { actualCostUsd, extractPayer, parseUsage, parseUsageFromSse, recordUsage } from "./ledger.js";
@@ -30,6 +30,16 @@ import {
   validateEmbedding,
 } from "./embeddings.js";
 import { embeddingStats, recordEmbeddingData, trackEmbeddingRequest } from "./embedding-stats.js";
+import {
+  issuePrepaidCode,
+  prepaidCodeExample,
+  prepaidCodeInputSchema,
+  prepaidCodeModels,
+  prepaidCodeOutputExample,
+  prepaidCodesEnabled,
+  quotePrepaidCode,
+  validatePrepaidCodePurchase,
+} from "./prepaid-codes.js";
 import { getNftMetadata, NftError, nftEnabled, nftPrice, nftNetworks, nftExampleAddress, nftDescription, type NftNetwork } from "./nft.js";
 import {
   toChatRequest,
@@ -313,6 +323,19 @@ const PAID_ROUTES = {
   } : {}),
   ...(jevEnabled ? { "POST /jev": paidRoute("Jev structured decisions via SystemOne, priced by input tokens",
     jevDiscovery, (context) => quoteJev(requestBody(context) as { state: unknown; questions: unknown }), false) } : {}),
+  ...(prepaidCodesEnabled ? {
+    "POST /prepaid/codes": paidRoute(
+      "Buy an admin-issued prepaid API code for one GPT model and a token budget",
+      declareDiscoveryExtension({
+        input: prepaidCodeExample,
+        inputSchema: prepaidCodeInputSchema,
+        bodyType: "json",
+        output: { example: prepaidCodeOutputExample },
+      }),
+      (context) => quotePrepaidCode(requestBody(context) as { model: string; tokens: number }),
+      false,
+    ),
+  } : {}),
 };
 
 app.use(paymentMiddleware(PAID_ROUTES, resourceServer));
@@ -322,6 +345,28 @@ if (imagesEnabled) {
   app.post("/api/v1/images/image2image", validateImage("edit"));
 }
 if (jevEnabled) app.post("/jev", validateJev);
+if (prepaidCodesEnabled) app.post("/prepaid/codes", validatePrepaidCodePurchase);
+if (prepaidCodesEnabled) app.post("/prepaid/codes", async (req, res) => {
+  try {
+    const purchase = await issuePrepaidCode(
+      req.body as { model: string; tokens: number },
+      config.network,
+      req.get("payment-signature") ?? req.get("x-payment") ?? undefined,
+    );
+    res.setHeader("Cache-Control", "no-store");
+    res.status(201).json({
+      object: "prepaid_code",
+      id: purchase.id,
+      code: purchase.code,
+      model: purchase.model,
+      tokens: { total: purchase.tokens, remaining: purchase.tokens },
+      api_base: "https://mapleai.shop/v1",
+    });
+  } catch (error) {
+    console.error("[prepaid-codes] issuance failed:", error instanceof Error ? error.message : "unknown");
+    res.status(503).json({ error: { message: "Prepaid code issuance is temporarily unavailable", type: "issuer_unavailable" } });
+  }
+});
 
 if (nftEnabled) {
   for (const network of Object.keys(nftNetworks) as NftNetwork[]) {
@@ -815,6 +860,14 @@ app.get("/.well-known/x402", (req: Request, res: Response) => {
       ...(embeddingsEnabled ? [{ method: "POST", path: "/v1/embeddings", description: "Free NVIDIA Nemotron embeddings", pricedBy: "free", exampleBody: { input: "Hello", input_type: "query", encoding_format: "float" } }] : []),
       ...(jevEnabled ? [{ method: "POST", path: "/jev", description: "Jev structured decisions",
         pricedBy: "input tokens plus payment overhead", exampleBody: jevExample }] : []),
+      ...(prepaidCodesEnabled ? [{
+        method: "POST",
+        path: "/prepaid/codes",
+        description: "Buy a prepaid API code for one GPT model and a token budget in 100000-token steps (100000-1000000)",
+        pricedBy: "input rate * tokens + network settlement fee",
+        exampleBody: prepaidCodeExample,
+        outputExample: prepaidCodeOutputExample,
+      }] : []),
       {
         method: "GET",
         path: "/v1/models",
@@ -1171,6 +1224,35 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
         "/api/v1/images/image2image": { post: { summary: "Edit an image", operationId: "editImage", security: [{ x402: [] }],
           "x-payment-info": { price: { mode: "dynamic", currency: "USD" }, protocols: [{ x402: {} }] },
           "x-pricing": { unit: "USD per image", models: imageRates }, requestBody: imageBody(true), responses: imageResponse } },
+      } : {}),
+      ...(prepaidCodesEnabled ? {
+        "/prepaid/codes": {
+          post: {
+            summary: "Buy a prepaid GPT API code",
+            operationId: "buyPrepaidCode",
+            security: [{ x402: [] }],
+            description:
+              "Purchases a prepaid bearer API key for https://mapleai.shop/v1. " +
+              "The key is limited to the selected model and a total token budget " +
+              "in 100000-token steps from 100000 to 1000000. " +
+              "Pricing uses the model input rate plus the network settlement fee.",
+            "x-payment-info": { price: { mode: "dynamic", currency: "USD" }, protocols: [{ x402: {} }] },
+            "x-pricing": {
+              unit: "prepaid token pack",
+              models: Object.fromEntries(prepaidCodeModels.map((model) => [model, pricingForModel(model)])),
+            },
+            requestBody: {
+              required: true,
+              content: { "application/json": { schema: prepaidCodeInputSchema, example: prepaidCodeExample } },
+            },
+            responses: {
+              "201": { description: "Prepaid bearer API key", content: { "application/json": { example: prepaidCodeOutputExample } } },
+              "400": { description: "Invalid model or token amount" },
+              "402": paidResponses["402"],
+              "503": { description: "Prepaid key issuer unavailable" },
+            },
+          },
+        },
       } : {}),
       ...(embeddingsEnabled ? {
         "/v1/embeddings": {

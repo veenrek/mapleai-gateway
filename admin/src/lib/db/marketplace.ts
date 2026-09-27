@@ -1750,3 +1750,26 @@ export function settlePrepaidTokens(
   });
   tx();
 }
+
+/** Find a prepaid buyer key by its exact name and decrypt the raw key (idempotent re-issue). */
+export function findPrepaidBuyerKeyByNameWithSecret(
+  name: string
+): { buyerKey: MarketplaceBuyerKey; apiKey: string | null } | null {
+  const row = getDb()
+    .prepare<BuyerKeyRow & { key_enc?: string | null }>(
+      `SELECT * FROM marketplace_buyer_keys
+       WHERE name = ? AND (token_budget_total IS NOT NULL OR is_unlimited = 1)
+       ORDER BY created_at DESC`
+    )
+    .get(name);
+  if (!row) return null;
+  let apiKey: string | null = null;
+  if (row.key_enc) {
+    try {
+      apiKey = decrypt(row.key_enc) ?? null;
+    } catch {
+      apiKey = null;
+    }
+  }
+  return { buyerKey: buyerKeyFromRow(row), apiKey };
+}
