@@ -326,7 +326,7 @@ const PAID_ROUTES = {
     jevDiscovery, (context) => quoteJev(requestBody(context) as { state: unknown; questions: unknown }), false) } : {}),
   ...(prepaidCodesEnabled ? {
     "POST /prepaid/codes": paidRoute(
-      "Buy an admin-issued prepaid API code for one GPT model and a token budget",
+      "Buy a prepaid API code for one GPT model and a token budget",
       declareDiscoveryExtension({
         input: prepaidCodeExample,
         inputSchema: prepaidCodeInputSchema,
