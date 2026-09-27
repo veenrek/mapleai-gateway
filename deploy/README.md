@@ -72,6 +72,10 @@ budget. Operator-issued unlimited keys can be scoped to all active combos; their
 usage is tracked without a token cap. Requests without a valid prepaid key
 receive `401`.
 
+The public `GET /health` and `GET /v1/health` aliases return the admin service's
+lightweight liveness check (`200` when the process and SQLite respond, otherwise
+`503`). They do not call model providers or require an API key.
+
 ## Payment accounting
 
 Each gateway appends paid-route events to `payment-events.jsonl` in its
