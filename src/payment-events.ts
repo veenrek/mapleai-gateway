@@ -19,10 +19,11 @@ export type PaymentEvent = {
   amountUsdc?: string;
   transaction?: string;
   reason?: string;
+  tokens?: number;
 };
 
 const paidPaths = new Set(['/v1/chat/completions', '/api/v1/chat/completions', '/v1/responses', '/api/v1/responses',
-  '/api/v1/images/generations', '/api/v1/images/image2image', '/jev']);
+  '/api/v1/images/generations', '/api/v1/images/image2image', '/jev', '/prepaid/codes']);
 const eventsFile = process.env.PAYMENT_EVENTS_FILE ?? './payment-events.jsonl';
 
 function clean(value: unknown, max = 160): string | undefined {
@@ -57,6 +58,7 @@ export function paymentEventForResponse(req: Request, res: Response, id: string)
   const event: PaymentEvent = {
     id, ts: new Date().toISOString(), kind: 'request_failed', route: req.path,
     model: clean(req.body?.model, 100), network: config.network, httpStatus: res.statusCode, ...signed,
+    ...(req.path === '/prepaid/codes' && Number.isSafeInteger(req.body?.tokens) ? { tokens: req.body.tokens } : {}),
   };
   const receiptHeader = res.getHeader('payment-response');
   if (typeof receiptHeader === 'string') {

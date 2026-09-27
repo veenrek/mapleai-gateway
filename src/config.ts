@@ -71,6 +71,8 @@ export const config = {
   embeddingDataFile: process.env.EMBEDDING_DATA_FILE ?? "./embedding-data.jsonl",
   embeddingStatsToken: process.env.EMBEDDING_STATS_TOKEN,
   infuraProjectId: process.env.INFURA_PROJECT_ID,
+  prepaidIssuerUrl: process.env.PREPAID_ISSUER_URL ?? "http://127.0.0.1:4031/api/internal/prepaid-codes",
+  prepaidIssuerToken: process.env.PREPAID_ISSUER_TOKEN,
 
   modelPrices: parseModelPrices(process.env.MODEL_PRICES),
   modelMapping: parseModelMapping(process.env.MODEL_MAPPING),
