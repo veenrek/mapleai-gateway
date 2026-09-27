@@ -15,6 +15,7 @@ import {
   type TokenUsage,
 } from "./pricing";
 import { marketplaceError } from "./response";
+import { resolveAllowedModels } from "./allCombos";
 import { checkKillSwitch } from "@/server/killSwitch/manager";
 
 const injectionGuard = createInjectionGuard();
@@ -104,14 +105,13 @@ export async function handlePrepaidChatCompletion(
   // Bypass-proof: клиент может прислать "by/gpt-5.6-sol" вместо "gpt-5.6-sol".
   // Сравниваем БЕЗ провайдер-префикса — иначе whitelist пропускает
   // любой nexo/ttm/… путь, хотя запись разрешала только публичное имя.
-  if (Array.isArray(buyerKey.allowedModels) && buyerKey.allowedModels.length > 0) {
+  // The __all_combos__ marker resolves to every active combo at request time.
+  const allowedModels = await resolveAllowedModels(buyerKey.allowedModels);
+  if (allowedModels.length > 0) {
     const baseModel = publicModel.includes("/")
       ? (publicModel.split("/").pop() as string)
       : publicModel;
-    if (
-      !buyerKey.allowedModels.includes(baseModel) &&
-      !buyerKey.allowedModels.includes(publicModel)
-    ) {
+    if (!allowedModels.includes(baseModel) && !allowedModels.includes(publicModel)) {
       return marketplaceError(403, "Buyer key is not allowed to use this model", "forbidden");
     }
   }

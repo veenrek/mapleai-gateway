@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { getMarketplacePrepaidKeyStatus } from "@/lib/db/marketplace";
+import { resolveAllowedModels } from "@/lib/marketplace/allCombos";
 import { marketplaceError, marketplaceJson } from "@/lib/marketplace/response";
 import { rateLimitHit } from "@/lib/marketplace/rateLimit";
 import { handleCorsOptions } from "@/shared/utils/cors";
@@ -46,5 +47,6 @@ export async function POST(request: Request) {
     return marketplaceJson({ valid: false, reason: "not_found" });
   }
 
-  return marketplaceJson(status);
+  const allowedModels = await resolveAllowedModels(status.allowedModels);
+  return marketplaceJson({ ...status, allowedModels });
 }

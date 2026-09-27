@@ -1,5 +1,6 @@
 import { getUnifiedModelsResponse } from "./catalog";
 import { authenticatePrepaidGatewayBuyer, isPrepaidGatewayRequest } from "@/lib/marketplace/prepaidGateway";
+import { resolveAllowedModels } from "@/lib/marketplace/allCombos";
 import { marketplaceError, marketplaceJson } from "@/lib/marketplace/response";
 
 /**
@@ -22,12 +23,13 @@ export async function GET(request: Request) {
 
   const buyerKey = authenticatePrepaidGatewayBuyer(request);
   if (!buyerKey) return marketplaceError(401, "Invalid prepaid buyer key", "unauthorized");
-  if (buyerKey.allowedModels.length === 0) {
+  const allowedModels = await resolveAllowedModels(buyerKey.allowedModels);
+  if (allowedModels.length === 0) {
     return marketplaceError(403, "This prepaid key has no allowed models", "forbidden");
   }
   return marketplaceJson({
     object: "list",
-    data: buyerKey.allowedModels.map((id) => ({
+    data: allowedModels.map((id) => ({
       id,
       object: "model",
       created: Math.floor(Date.now() / 1000),
