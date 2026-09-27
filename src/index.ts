@@ -21,7 +21,14 @@ import { paymentEventMiddleware } from "./payment-events.js";
 import { fetchUpstreamChat } from "./upstream.js";
 import { fetchImage, imageModels, imageRates, imagesEnabled, quoteImage, validateImage, type ImageKind, type ImageRequest } from "./images.js";
 import { fetchJev, jevEnabled, jevModel, jevPricePerMillion, quoteJev, validateJev } from "./jev.js";
-import { embeddingModel, embeddingsEnabled, fetchEmbeddings, validateEmbedding } from "./embeddings.js";
+import {
+  embeddingModel,
+  embeddingRequestSchema,
+  embeddingValidationErrorSchema,
+  embeddingsEnabled,
+  fetchEmbeddings,
+  validateEmbedding,
+} from "./embeddings.js";
 import { embeddingStats, recordEmbeddingData, trackEmbeddingRequest } from "./embedding-stats.js";
 import { getNftMetadata, NftError, nftEnabled, nftPrice, nftNetworks, nftExampleAddress, nftDescription, type NftNetwork } from "./nft.js";
 import {
@@ -39,7 +46,7 @@ const chain = chainInfo(config.network, config.paymentAssetAddress);
 const app = express();
 app.disable("x-powered-by");
 app.set("trust proxy", true);
-if (embeddingsEnabled) app.post("/v1/embeddings", (req, res, next) => { trackEmbeddingRequest(req, res); next(); });
+if (embeddingsEnabled) app.post("/v1/embeddings", (req, res, next) => { trackEmbeddingRequest(req, res, embeddingModel); next(); });
 const parseJson = express.json({ limit: "15mb" });
 app.use((req, res, next) => {
   parseJson(req, res, (error) => {
@@ -640,7 +647,7 @@ if (embeddingsEnabled) app.post("/v1/embeddings", async (req, res) => {
   try {
     const upstream = await fetchEmbeddings(req.body);
     const raw = await upstream.text();
-    recordEmbeddingData(req.body, raw, upstream.status, req.get("host") ?? "unknown");
+    recordEmbeddingData(req.body, raw, upstream.status, req.get("host") ?? "unknown", embeddingModel);
     if (!upstream.ok) {
       let message = "NVIDIA returned HTTP " + upstream.status;
       try {
@@ -1165,7 +1172,33 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
           "x-payment-info": { price: { mode: "dynamic", currency: "USD" }, protocols: [{ x402: {} }] },
           "x-pricing": { unit: "USD per image", models: imageRates }, requestBody: imageBody(true), responses: imageResponse } },
       } : {}),
-      ...(embeddingsEnabled ? { "/v1/embeddings": { post: { summary: "Create free embeddings", operationId: "createEmbeddings", security: [], description: `Free NVIDIA Nemotron embeddings. Every request is routed to ${embeddingModel}; any supplied model value is ignored.`, requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["input"], properties: { model: { type: "string", description: "Optional compatibility field; its value is ignored." }, input: { oneOf: [{ type: "string" }, { type: "array", minItems: 1, maxItems: 128, items: { type: "string" } }] }, input_type: { type: "string", enum: ["query", "passage"] }, encoding_format: { type: "string", enum: ["float", "base64"] } } }, example: { input: "Hello", input_type: "query", encoding_format: "float" } } } }, responses: { "200": { description: "Embedding vectors" }, "400": { description: "Invalid request" }, "502": { description: "NVIDIA upstream failed" } } } } } : {}),
+      ...(embeddingsEnabled ? {
+        "/v1/embeddings": {
+          post: {
+            summary: "Create free embeddings",
+            operationId: "createEmbeddings",
+            security: [],
+            description: `Free NVIDIA Nemotron embeddings. Every request is routed to ${embeddingModel}; any supplied model value is ignored.`,
+            requestBody: {
+              required: true,
+              content: {
+                "application/json": {
+                  schema: embeddingRequestSchema,
+                  example: { input: "Hello", input_type: "query", encoding_format: "float" },
+                },
+              },
+            },
+            responses: {
+              "200": { description: "Embedding vectors" },
+              "400": {
+                description: "Invalid request body. The error includes the expected request schema.",
+                content: { "application/json": { schema: embeddingValidationErrorSchema } },
+              },
+              "502": { description: "NVIDIA upstream failed" },
+            },
+          },
+        },
+      } : {}),
       ...(jevEnabled ? { "/jev": { post: { summary: "Run Jev structured decision", operationId: "runJev",
         description: "SystemOne protocol for jev-latest. Returns structured answers, not chat text.",
         security: [{ x402: [] }],
