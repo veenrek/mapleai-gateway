@@ -580,12 +580,15 @@ export class DefaultExecutor extends BaseExecutor {
         // injection when `thinking` / `enable_thinking` is set. Skip injection in
         // those cases instead of unconditionally adding `stream_options`.
         const defaultsRecord = withDefaults as Record<string, unknown>;
-        const qwenBlocksStreamOptions =
-          this.provider === "qwen" &&
-          (defaultsRecord.stream === false ||
-            Boolean(defaultsRecord.thinking) ||
-            Boolean(defaultsRecord.enable_thinking));
-        if (qwenBlocksStreamOptions) {
+        // NVIDIA NIM rejects stream_options on non-streaming bodies the same
+        // way Qwen does ("only allowed when 'stream' is set to true"). The
+        // outgoing body is serialized as-is, so inject only when the body
+        // itself is streaming — an executor-level stream flag is not enough.
+        const bodyBlocksStreamOptions =
+          defaultsRecord.stream !== true ||
+          (this.provider === "qwen" &&
+            (Boolean(defaultsRecord.thinking) || Boolean(defaultsRecord.enable_thinking)));
+        if (bodyBlocksStreamOptions) {
           if (Object.prototype.hasOwnProperty.call(defaultsRecord, "stream_options")) {
             const withoutStreamOptions = { ...defaultsRecord };
             delete withoutStreamOptions.stream_options;
