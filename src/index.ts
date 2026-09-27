@@ -279,11 +279,6 @@ const jevDiscovery = declareDiscoveryExtension({ input: jevExample, inputSchema:
   output: { example: { model: "jev-1.13.0", answers: { billing: { type: "noul", noul: 0.98 } },
     usage: { input_tokens: 282, output_tokens: 20 } } } });
 
-if (imagesEnabled) {
-  app.post("/api/v1/images/generations", validateImage("generation"));
-  app.post("/api/v1/images/image2image", validateImage("edit"));
-}
-if (jevEnabled) app.post("/jev", validateJev);
 if (embeddingsEnabled) app.post("/v1/embeddings", validateEmbedding);
 
 const PAID_ROUTES = {
@@ -314,6 +309,12 @@ const PAID_ROUTES = {
 };
 
 app.use(paymentMiddleware(PAID_ROUTES, resourceServer));
+
+if (imagesEnabled) {
+  app.post("/api/v1/images/generations", validateImage("generation"));
+  app.post("/api/v1/images/image2image", validateImage("edit"));
+}
+if (jevEnabled) app.post("/jev", validateJev);
 
 if (nftEnabled) {
   for (const network of Object.keys(nftNetworks) as NftNetwork[]) {

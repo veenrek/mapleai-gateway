@@ -92,10 +92,11 @@ export function validateImage(kind: ImageKind) {
 
 export async function quoteImage(body: Record<string, unknown>): Promise<string> {
   const rate = imageRates[String(body.model ?? "")]?.[String(body.size ?? "")];
-  if (!rate) throw new Error("Image price unavailable");
   const n = Number(body.n ?? 1);
-  if (!Number.isInteger(n) || n < 1 || n > 4) throw new Error("Invalid image count");
   const overhead = await paymentOverheadUsd();
+  if (!rate || !Number.isInteger(n) || n < 1 || n > 4) {
+    return "$" + Math.max(config.minChargeUsd, overhead).toFixed(6);
+  }
   return "$" + Math.max(config.minChargeUsd, rate * n + overhead).toFixed(6);
 }
 
