@@ -231,7 +231,7 @@ const responsesDiscovery = declareDiscoveryExtension({
 });
 
 /** Every paid route shares one pricing rule; only the discovery shape differs. */
-function paidRoute(description: string, discovery: ReturnType<typeof declareDiscoveryExtension>, price: DynamicPrice = quotedPrice, includeQuote = true) {
+function paidRoute(description: string, discovery: ReturnType<typeof declareDiscoveryExtension>, price: DynamicPrice = quotedPrice, includeQuote = true, upfront = false) {
   return {
     accepts: {
       scheme: "exact",
@@ -239,6 +239,10 @@ function paidRoute(description: string, discovery: ReturnType<typeof declareDisc
       network: config.network,
       payTo: config.payTo,
       maxTimeoutSeconds: 120,
+      // Solana blockhashes outlive slow upstream calls (image generation takes
+      // 40-100s), so settlement after the handler fails with BlockhashNotFound.
+      // Upfront settles right after verification, before the work starts.
+      ...(upfront && config.network.startsWith("solana:") ? { extra: { paymentFlow: "upfront" } } : {}),
     },
     description,
     mimeType: "application/json",
@@ -319,8 +323,8 @@ const PAID_ROUTES = {
     responsesDiscovery,
   ),
   ...(imagesEnabled ? {
-    "POST /api/v1/images/generations": paidRoute("Generate images, priced per image and size", imageDiscovery, (context) => quoteImage(requestBody(context)), false),
-    "POST /api/v1/images/image2image": paidRoute("Edit an image, priced per image and size", editDiscovery, (context) => quoteImage(requestBody(context)), false),
+    "POST /api/v1/images/generations": paidRoute("Generate images, priced per image and size", imageDiscovery, (context) => quoteImage(requestBody(context)), false, true),
+    "POST /api/v1/images/image2image": paidRoute("Edit an image, priced per image and size", editDiscovery, (context) => quoteImage(requestBody(context)), false, true),
   } : {}),
   ...(jevEnabled ? { "POST /jev": paidRoute("Jev structured decisions via SystemOne, priced by input tokens",
     jevDiscovery, (context) => quoteJev(requestBody(context) as { state: unknown; questions: unknown }), false) } : {}),
