@@ -12,6 +12,7 @@ const sourceEnvPath = join(sourceDataDir, "server.env");
 const identity = join(process.env.USERPROFILE ?? "", ".ssh", "hermes_vds_transfer");
 const host = process.env.MAPLEAI_VDS ?? "root@31.77.207.76";
 const apply = process.argv.includes("--apply");
+const combosOnly = process.argv.includes("--combos-only");
 
 function parseEnv(path) {
   const values = {};
@@ -33,6 +34,7 @@ const Database = sourceRequire("better-sqlite3");
 const db = new Database(sourceDbPath, { readonly: true, fileMustExist: true });
 const sourceConnections = db.prepare("SELECT * FROM provider_connections ORDER BY id").all();
 const sourceNodes = db.prepare("SELECT * FROM provider_nodes ORDER BY id").all();
+const sourceCombos = db.prepare("SELECT * FROM combos ORDER BY sort_order, name").all();
 db.close();
 
 const { decrypt, migrateLegacyEncryptedString } = await import(
@@ -59,19 +61,25 @@ for (const row of sourceConnections) {
 
 const providers = sourceNodes.map((node) => ({ id: node.id, name: node.name }));
 console.log(JSON.stringify({
-  mode: apply ? "apply" : "dry-run",
-  providerConnections: sourceConnections.length,
+  mode: apply ? (combosOnly ? "combos-only" : "apply") : "dry-run",
+  providerConnections: combosOnly ? 0 : sourceConnections.length,
+  routingCombos: sourceCombos.length,
   customProviders: providers,
   encryptedCredentialCells,
   allEncryptedCredentialsReadable: true,
 }));
 
 if (!apply) {
-  console.log("Dry run only. Re-run with --apply to import providers.");
+  console.log("Dry run only. Use --apply for a fresh destination or --combos-only --apply to add combos after providers.");
   process.exit(0);
 }
 
-const payload = JSON.stringify({ connections: sourceConnections, nodes: sourceNodes });
+const payload = JSON.stringify({
+  mode: combosOnly ? "combos-only" : "providers-and-combos",
+  connections: combosOnly ? [] : sourceConnections,
+  nodes: combosOnly ? [] : sourceNodes,
+  combos: sourceCombos,
+});
 const remoteScript = String.raw`
 const fs = require('node:fs');
 const path = require('node:path');
@@ -79,6 +87,7 @@ const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 const Database = require('/opt/mapleai-admin/node_modules/better-sqlite3');
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
+const comboOnly = input.mode === 'combos-only';
 const dataDir = '/var/lib/mapleai-admin';
 const dbPath = path.join(dataDir, 'storage.sqlite');
 const serverEnv = fs.readFileSync(path.join(dataDir, 'server.env'), 'utf8');
@@ -101,27 +110,38 @@ let backupPath;
 let db;
 try {
   fs.mkdirSync(path.join(dataDir, 'db_backups'), { recursive: true, mode: 0o700 });
-  backupPath = path.join(dataDir, 'db_backups', 'before-provider-import-' + new Date().toISOString().replace(/[:.]/g, '-') + '.sqlite');
+  backupPath = path.join(dataDir, 'db_backups', 'before-provider-combo-import-' + new Date().toISOString().replace(/[:.]/g, '-') + '.sqlite');
   db = new Database(dbPath);
   const existingConnections = db.prepare('SELECT COUNT(*) AS count FROM provider_connections').get().count;
   const existingNodes = db.prepare('SELECT COUNT(*) AS count FROM provider_nodes').get().count;
-  if (existingConnections !== 0 || existingNodes !== 0) throw new Error('Destination already contains provider records; refusing to merge automatically');
+  const existingCombos = db.prepare('SELECT COUNT(*) AS count FROM combos').get().count;
+  if (comboOnly) {
+    if (existingConnections === 0 || existingNodes === 0) throw new Error('Providers must be imported before combo-only migration');
+  } else if (existingConnections !== 0 || existingNodes !== 0) {
+    throw new Error('Destination already contains provider records; refusing to merge automatically');
+  }
+  if (existingCombos !== 0) throw new Error('Destination already contains routing combos; refusing to merge automatically');
   await db.backup(backupPath);
   fs.chmodSync(backupPath, 0o600);
   const nodeColumns = new Set(db.prepare('PRAGMA table_info(provider_nodes)').all().map(row => row.name));
   const connectionColumns = new Set(db.prepare('PRAGMA table_info(provider_connections)').all().map(row => row.name));
+  const comboColumns = new Set(db.prepare('PRAGMA table_info(combos)').all().map(row => row.name));
   const nodeFields = Object.keys(input.nodes[0] ?? {}).filter(key => nodeColumns.has(key));
   const connectionFields = Object.keys(input.connections[0] ?? {}).filter(key => connectionColumns.has(key));
+  const comboFields = Object.keys(input.combos[0] ?? {}).filter(key => comboColumns.has(key));
   for (const required of ['id', 'type', 'name', 'base_url']) if (!nodeColumns.has(required)) throw new Error('Destination provider_nodes schema mismatch');
   for (const required of ['id', 'provider', 'auth_type', 'is_active']) if (!connectionColumns.has(required)) throw new Error('Destination provider_connections schema mismatch');
-  const nodeInsert = db.prepare('INSERT INTO provider_nodes (' + nodeFields.map(key => '"' + key + '"').join(',') + ') VALUES (' + nodeFields.map(() => '?').join(',') + ')');
-  const connectionInsert = db.prepare('INSERT INTO provider_connections (' + connectionFields.map(key => '"' + key + '"').join(',') + ') VALUES (' + connectionFields.map(() => '?').join(',') + ')');
+  for (const required of ['id', 'name', 'data']) if (!comboColumns.has(required)) throw new Error('Destination combos schema mismatch');
+  const nodeInsert = nodeFields.length ? db.prepare('INSERT INTO provider_nodes (' + nodeFields.map(key => '"' + key + '"').join(',') + ') VALUES (' + nodeFields.map(() => '?').join(',') + ')') : null;
+  const connectionInsert = connectionFields.length ? db.prepare('INSERT INTO provider_connections (' + connectionFields.map(key => '"' + key + '"').join(',') + ') VALUES (' + connectionFields.map(() => '?').join(',') + ')') : null;
+  const comboInsert = db.prepare('INSERT INTO combos (' + comboFields.map(key => '"' + key + '"').join(',') + ') VALUES (' + comboFields.map(() => '?').join(',') + ')');
   const importRows = db.transaction(() => {
     for (const row of input.nodes) nodeInsert.run(...nodeFields.map(key => row[key] ?? null));
     for (const row of input.connections) {
       for (const field of ['api_key', 'access_token', 'refresh_token', 'id_token']) row[field] = encrypt(row[field]);
       connectionInsert.run(...connectionFields.map(key => row[key] ?? null));
     }
+    for (const row of input.combos) comboInsert.run(...comboFields.map(key => row[key] ?? null));
   });
   importRows();
   db.close();
@@ -133,7 +153,7 @@ try {
     if (fs.existsSync(file)) fs.chmodSync(file, 0o600);
   }
   fs.chmodSync(dataDir, 0o700);
-  console.log(JSON.stringify({ importedProviderConnections: input.connections.length, importedCustomProviders: input.nodes.length, encryptedCredentialCells: input.connections.reduce((n, row) => n + ['api_key','access_token','refresh_token','id_token'].filter(key => typeof row[key] === 'string' && row[key].startsWith('enc:v1:')).length, 0), backupCreated: true }));
+  console.log(JSON.stringify({ importedProviderConnections: input.connections.length, importedCustomProviders: input.nodes.length, importedRoutingCombos: input.combos.length, encryptedCredentialCells: input.connections.reduce((n, row) => n + ['api_key','access_token','refresh_token','id_token'].filter(key => typeof row[key] === 'string' && row[key].startsWith('enc:v1:')).length, 0), backupCreated: true }));
 } finally {
   if (db) db.close();
   const started = spawnSync('systemctl', ['start', 'mapleai-admin.service'], { encoding: 'utf8' });
@@ -143,6 +163,7 @@ const verify = new Database(dbPath, { readonly: true });
 const counts = {
   providerConnections: verify.prepare('SELECT COUNT(*) AS count FROM provider_connections').get().count,
   customProviders: verify.prepare('SELECT COUNT(*) AS count FROM provider_nodes').get().count,
+  routingCombos: verify.prepare('SELECT COUNT(*) AS count FROM combos').get().count,
   activeConnections: verify.prepare('SELECT COUNT(*) AS count FROM provider_connections WHERE is_active = 1').get().count,
 };
 verify.close();
