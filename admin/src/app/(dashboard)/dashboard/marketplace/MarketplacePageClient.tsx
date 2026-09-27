@@ -106,6 +106,7 @@ function TextInput({
   placeholder,
   type = "text",
   required = false,
+  disabled = false,
 }: {
   label: string;
   value: string;
@@ -113,6 +114,7 @@ function TextInput({
   placeholder?: string;
   type?: string;
   required?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <label className="block space-y-1.5">
@@ -123,6 +125,7 @@ function TextInput({
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         required={required}
+        disabled={disabled}
         className="w-full rounded-control border border-border bg-bg px-3 py-2 text-sm text-text-main outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
       />
     </label>
@@ -176,6 +179,7 @@ export default function MarketplacePageClient() {
   const [prepaidModelOptions, setPrepaidModelOptions] = useState<string[]>([]);
   const [prepaidModels, setPrepaidModels] = useState<string[]>([]);
   const [prepaidTokensMillions, setPrepaidTokensMillions] = useState("50");
+  const [prepaidUnlimited, setPrepaidUnlimited] = useState(false);
   const [prepaidExpiryDays, setPrepaidExpiryDays] = useState("");
   const [issuedPrepaidKey, setIssuedPrepaidKey] = useState<{ apiKey: string; name: string } | null>(
     null
@@ -354,10 +358,15 @@ export default function MarketplacePageClient() {
           await fetch("/api/v1/models", { cache: "no-store" })
         );
         const entries = Array.isArray(data.data) ? data.data : [];
+        const comboNames = new Set(comboOptions.map((combo) => combo.name));
         const models =
           scopeKind === "combo"
             ? entries
-                .filter((m) => m.owned_by === "combo" && m.id === scopeValue)
+                .filter(
+                  (m) =>
+                    m.owned_by === "combo" &&
+                    (scopeValue === "__all__" ? comboNames.has(m.id ?? "") : m.id === scopeValue)
+                )
                 .map((m) => m.id as string)
             : entries
                 .filter((m) => m.owned_by === scopeValue && typeof m.id === "string")
@@ -370,7 +379,7 @@ export default function MarketplacePageClient() {
     return () => {
       cancelled = true;
     };
-  }, [prepaidScope]);
+  }, [prepaidScope, comboOptions]);
 
   const loadProviderConnections = async () => {
     try {
@@ -454,8 +463,7 @@ export default function MarketplacePageClient() {
       !prepaidName.trim() ||
       !prepaidScope ||
       prepaidModels.length === 0 ||
-      !Number.isFinite(tokens) ||
-      tokens <= 0
+      (!prepaidUnlimited && (!Number.isFinite(tokens) || tokens <= 0))
     )
       return;
     const [scopeKind, ...rest] = prepaidScope.split(":");
@@ -470,7 +478,7 @@ export default function MarketplacePageClient() {
             name: prepaidName.trim(),
             ...(scopeKind === "combo" ? { comboId: scopeValue } : { provider: scopeValue }),
             models: prepaidModels,
-            tokens,
+            ...(prepaidUnlimited ? { unlimited: true } : { tokens }),
             expiresInDays: prepaidExpiryDays ? Number(prepaidExpiryDays) : undefined,
           }),
         })
@@ -479,6 +487,7 @@ export default function MarketplacePageClient() {
       setPrepaidName("");
       setPrepaidScope("");
       setPrepaidModels([]);
+      setPrepaidUnlimited(false);
       showMessage(`Prepaid key issued: ${data.name}`);
       await loadPrepaidKeys();
     } catch (err) {
@@ -700,7 +709,10 @@ export default function MarketplacePageClient() {
                     </span>
                     <select
                       value={prepaidScope}
-                      onChange={(event) => setPrepaidScope(event.target.value)}
+                      onChange={(event) => {
+                        setPrepaidScope(event.target.value);
+                        if (!event.target.value.startsWith("combo:")) setPrepaidUnlimited(false);
+                      }}
                       className="w-full rounded-control border border-border bg-bg px-3 py-2 text-sm text-text-main outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
                     >
                       <option value="">Select provider or combo</option>
@@ -713,6 +725,7 @@ export default function MarketplacePageClient() {
                       </optgroup>
                       {comboOptions.length > 0 && (
                         <optgroup label="Combos">
+                          <option value="combo:__all__">All active combos</option>
                           {comboOptions.map((combo) => (
                             <option key={combo.id} value={`combo:${combo.name}`}>
                               combo: {combo.name}
@@ -780,7 +793,18 @@ export default function MarketplacePageClient() {
                     value={prepaidTokensMillions}
                     onChange={setPrepaidTokensMillions}
                     type="number"
+                    disabled={prepaidUnlimited}
                   />
+                  <label className="flex items-center gap-2 text-sm text-text-main">
+                    <input
+                      type="checkbox"
+                      className="accent-primary"
+                      checked={prepaidUnlimited}
+                      disabled={!prepaidScope.startsWith("combo:")}
+                      onChange={(event) => setPrepaidUnlimited(event.target.checked)}
+                    />
+                    Unlimited token budget
+                  </label>
                   <TextInput
                     label="Expires in days (optional)"
                     value={prepaidExpiryDays}
@@ -791,7 +815,13 @@ export default function MarketplacePageClient() {
                 </div>
                 <Button
                   onClick={issuePrepaidKey}
-                  disabled={!prepaidName.trim() || !prepaidScope || prepaidModels.length === 0}
+                  disabled={
+                    !prepaidName.trim() ||
+                    !prepaidScope ||
+                    prepaidModels.length === 0 ||
+                    (!prepaidUnlimited &&
+                      (!Number.isFinite(Number(prepaidTokensMillions)) || Number(prepaidTokensMillions) <= 0))
+                  }
                   icon="vpn_key"
                 >
                   Issue prepaid key

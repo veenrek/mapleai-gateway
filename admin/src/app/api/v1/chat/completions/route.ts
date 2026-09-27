@@ -63,7 +63,7 @@ export async function POST(request) {
     }
     // Admin-issued prepaid keys (token budget) bypass marketplace listings
     // entirely — model name resolves directly to a combo or provider model.
-    if (buyerKey.tokenBudgetTotal != null) {
+    if (buyerKey.tokenBudgetTotal != null || buyerKey.isUnlimited) {
       return handlePrepaidChatCompletion(request, buyerKey);
     }
     return handleMarketplaceChatCompletion(request, buyerKey);

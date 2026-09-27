@@ -22,6 +22,7 @@ type PrepaidKey = {
   status: string;
   allowedModels: string[];
   tokenBudgetTotal: number | null;
+  isUnlimited: boolean;
   tokensUsed: number;
   tokensReserved: number;
   expiresAt: string | null;
@@ -106,7 +107,7 @@ export default function PrepaidStatsClient() {
 
       {keys.map((k) => {
         const total = k.tokenBudgetTotal ?? 0;
-        const usedPct = total > 0 ? Math.min(100, (k.tokensUsed / total) * 100) : 0;
+        const usedPct = !k.isUnlimited && total > 0 ? Math.min(100, (k.tokensUsed / total) * 100) : 0;
         const expired = k.expiresAt ? Date.parse(k.expiresAt) <= Date.now() : false;
         return (
           <div key={k.id} className="rounded-lg border border-border p-4 space-y-3">
@@ -168,7 +169,7 @@ export default function PrepaidStatsClient() {
               )}
             </div>
 
-            <div>
+            {!k.isUnlimited && <div>
               <div className="h-1.5 w-full overflow-hidden rounded-full bg-black/10 dark:bg-white/10">
                 <div className="h-full rounded-full bg-primary" style={{ width: `${usedPct}%` }} />
               </div>
@@ -178,7 +179,13 @@ export default function PrepaidStatsClient() {
                 {" · "}
                 {m(Math.max(0, total - k.tokensUsed - k.tokensReserved))} remaining
               </div>
-            </div>
+            </div>}
+            {k.isUnlimited && (
+              <div className="font-mono text-xs text-text-muted">
+                Unlimited token budget В· {m(k.tokensUsed)} tokens used
+                {k.tokensReserved > 0 ? ` (+${(k.tokensReserved / 1e6).toFixed(2)}M in flight)` : ""}
+              </div>
+            )}
 
             {k.usageStats && k.usageStats.platforms.length > 0 && (
               <div className="overflow-x-auto">

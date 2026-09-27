@@ -83,6 +83,29 @@ test("prepaid key issues with zero USD and a full token budget", () => {
   assert.equal(buyerKey.userId, null);
 });
 
+test("unlimited prepaid key tracks usage without exhausting or disabling", () => {
+  const { buyerKey, apiKey } = marketplace.createMarketplaceBuyerKey({
+    name: "unlimited combos",
+    allowedModels: ["combo-a", "combo-b"],
+    isUnlimited: true,
+    userId: null,
+    balanceMicroUsd: 0,
+  });
+
+  assert.match(apiKey, /^oms_buy_/);
+  assert.equal(buyerKey.isUnlimited, true);
+  assert.equal(buyerKey.tokenBudgetTotal, null);
+  marketplace.reservePrepaidTokens(buyerKey.id, 100_000_000);
+  marketplace.settlePrepaidTokens(buyerKey.id, 100_000_000, 75_000_000, true);
+
+  const after = marketplace.getMarketplaceBuyerKeyById(buyerKey.id)!;
+  assert.equal(after.tokensUsed, 75_000_000);
+  assert.equal(after.tokensReserved, 0);
+  assert.equal(after.status, "active");
+  assert.equal(marketplace.getMarketplacePrepaidKeyStatus(apiKey)?.unlimited, true);
+  assert.ok(marketplace.listPrepaidMarketplaceBuyerKeys().some((key) => key.id === buyerKey.id));
+});
+
 test("reserve in prepaid mode debits tokens, not USD", async () => {
   await createListingFixture();
   const { buyerKey } = issuePrepaid(["market/test/gpt-5"], 10_000_000);

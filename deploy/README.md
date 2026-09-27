@@ -68,7 +68,9 @@ Dashboard → Marketplace → Prepaid API keys, selecting a provider or combo.
 Send it as `Authorization: Bearer oms_buy_...`; `GET /v1/models` returns only
 models allowed by that key. Chat Completions and Responses requests using a
 combo name are routed by the combo engine and charged against the key's token
-budget. Requests without a valid prepaid key receive `401`.
+budget. Operator-issued unlimited keys can be scoped to all active combos; their
+usage is tracked without a token cap. Requests without a valid prepaid key
+receive `401`.
 
 ## Payment accounting
 

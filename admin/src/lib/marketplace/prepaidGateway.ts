@@ -8,5 +8,5 @@ export function isPrepaidGatewayRequest(request: Request): boolean {
 
 export function authenticatePrepaidGatewayBuyer(request: Request) {
   const buyerKey = authenticateMarketplaceBuyer(request);
-  return buyerKey?.tokenBudgetTotal != null ? buyerKey : null;
+  return buyerKey?.tokenBudgetTotal != null || buyerKey?.isUnlimited ? buyerKey : null;
 }

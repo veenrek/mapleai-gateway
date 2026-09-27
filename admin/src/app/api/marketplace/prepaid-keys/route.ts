@@ -3,7 +3,7 @@ import { requireManagementAuth } from "@/lib/api/requireManagementAuth";
 import { createMarketplaceBuyerKey, listPrepaidMarketplaceBuyerKeysWithStats } from "@/lib/db/marketplace";
 import { marketplaceError, marketplaceJson } from "@/lib/marketplace/response";
 import { getUnifiedModelsResponse } from "@/app/api/v1/models/catalog";
-import { getComboById, getComboByName } from "@/lib/localDb";
+import { getComboById, getComboByName, getCombos } from "@/lib/localDb";
 import { handleCorsOptions } from "@/shared/utils/cors";
 
 export async function OPTIONS() {
@@ -25,7 +25,9 @@ const issueSchema = z.object({
   /** Scope the key to a combo model. */
   comboId: z.string().trim().min(1).optional(),
   /** Token budget, e.g. 50_000_000 for "50M tokens". */
-  tokens: z.number().int().positive("tokens must be a positive integer"),
+  tokens: z.number().int().positive("tokens must be a positive integer").optional(),
+  /** Operator-issued prepaid key without a token cap. */
+  unlimited: z.boolean().optional(),
   /** Optional validity window. */
   expiresInDays: z.number().int().positive().max(3650).optional(),
 });
@@ -53,6 +55,18 @@ async function getCatalogModelsForScope(
   };
   const entries = Array.isArray(data.data) ? data.data : [];
   if (scope.comboId) {
+    if (scope.comboId === "__all__") {
+      const combos = await getCombos();
+      const activeNames = new Set(
+        combos
+          .filter((combo) => combo.isActive !== false && combo.isHidden !== true)
+          .map((combo) => combo.name)
+          .filter((name): name is string => typeof name === "string" && name.length > 0)
+      );
+      return entries
+        .filter((model) => model.owned_by === "combo" && typeof model.id === "string" && activeNames.has(model.id))
+        .map((model) => model.id as string);
+    }
     const combo = (await getComboById(scope.comboId)) ?? (await getComboByName(scope.comboId));
     const modelId = typeof combo?.name === "string" ? combo.name : scope.comboId;
     return entries
@@ -81,6 +95,13 @@ export async function POST(request: Request) {
   }
 
   const { name, models, provider, comboId, tokens, expiresInDays } = parsed.data;
+  const unlimited = parsed.data.unlimited === true;
+  if (!unlimited && tokens == null) {
+    return marketplaceError(400, "tokens are required unless unlimited mode is enabled");
+  }
+  if (unlimited && !comboId) {
+    return marketplaceError(400, "Unlimited prepaid keys must be scoped to one or more combos");
+  }
 
   // Provider/combo scope: the allowed models come from the storefront catalog —
   // either the whole scope (no explicit models) or the owner-picked subset.
@@ -126,7 +147,8 @@ export async function POST(request: Request) {
   const { buyerKey, apiKey } = createMarketplaceBuyerKey({
     name,
     allowedModels,
-    tokenBudgetTotal: tokens,
+    tokenBudgetTotal: unlimited ? null : tokens,
+    isUnlimited: unlimited,
     expiresAt,
     userId: null,
     balanceMicroUsd: 0,
@@ -140,7 +162,10 @@ export async function POST(request: Request) {
       apiKey,
       keyPrefix: buyerKey.keyPrefix,
       allowedModels: buyerKey.allowedModels,
-      tokens: { total: buyerKey.tokenBudgetTotal, remaining: buyerKey.tokenBudgetTotal },
+      unlimited: buyerKey.isUnlimited,
+      tokens: buyerKey.isUnlimited
+        ? null
+        : { total: buyerKey.tokenBudgetTotal, remaining: buyerKey.tokenBudgetTotal },
       expiresAt: buyerKey.expiresAt,
       shareUrl: `/check`,
     },

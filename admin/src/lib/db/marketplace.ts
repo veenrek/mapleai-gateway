@@ -74,6 +74,7 @@ interface BuyerKeyRow {
   allowed_models_json: string;
   user_id: string | null;
   token_budget_total: number | null;
+  is_unlimited: number;
   tokens_used: number;
   tokens_reserved: number;
   expires_at: string | null;
@@ -197,6 +198,7 @@ export interface MarketplaceBuyerKey {
   allowedModels: string[];
   userId: string | null;
   tokenBudgetTotal: number | null;
+  isUnlimited: boolean;
   tokensUsed: number;
   tokensReserved: number;
   expiresAt: string | null;
@@ -253,6 +255,7 @@ export interface CreateMarketplaceBuyerKeyInput {
   userId?: string | null;
   /** Prepaid-token mode: usage debits tokens instead of the USD balance. */
   tokenBudgetTotal?: number | null;
+  isUnlimited?: boolean;
   /** Optional ISO timestamp after which the key is rejected. */
   expiresAt?: string | null;
 }
@@ -434,6 +437,7 @@ function buyerKeyFromRow(row: BuyerKeyRow): MarketplaceBuyerKey {
     allowedModels: parseStringArray(row.allowed_models_json),
     userId: row.user_id ?? null,
     tokenBudgetTotal: row.token_budget_total ?? null,
+    isUnlimited: row.is_unlimited === 1,
     tokensUsed: row.tokens_used ?? 0,
     tokensReserved: row.tokens_reserved ?? 0,
     expiresAt: row.expires_at ?? null,
@@ -1020,15 +1024,18 @@ export function createMarketplaceBuyerKey(input: CreateMarketplaceBuyerKeyInput)
   const apiKey = generateMarketplaceKey("buyer");
   const createdAt = nowIso();
   const allowedModels = input.allowedModels || [];
-  const tokenBudgetTotal =
-    input.tokenBudgetTotal != null ? Math.max(0, Math.floor(input.tokenBudgetTotal)) : null;
+  const tokenBudgetTotal = input.isUnlimited
+    ? null
+    : input.tokenBudgetTotal != null
+      ? Math.max(0, Math.floor(input.tokenBudgetTotal))
+      : null;
 
   db.prepare(
     `INSERT INTO marketplace_buyer_keys (
       id, name, key_hash, key_prefix, key_enc, status, balance_micro_usd, allowed_models_json,
-      user_id, token_budget_total, tokens_used, tokens_reserved, expires_at,
+      user_id, token_budget_total, is_unlimited, tokens_used, tokens_reserved, expires_at,
       created_at, updated_at, last_used_at
-    ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, 0, 0, ?, ?, ?, NULL)`
+    ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, NULL)`
   ).run(
     id,
     input.name.trim(),
@@ -1039,6 +1046,7 @@ export function createMarketplaceBuyerKey(input: CreateMarketplaceBuyerKeyInput)
     JSON.stringify(allowedModels),
     input.userId || null,
     tokenBudgetTotal,
+    input.isUnlimited ? 1 : 0,
     input.expiresAt || null,
     createdAt,
     createdAt
@@ -1163,7 +1171,7 @@ export function reserveMarketplaceUsage(input: ReserveMarketplaceUsageInput): {
     // Prepaid-token keys debit tokens instead of the USD balance: the operator
     // collected payment out-of-band when issuing the key, so no USD movement
     // is reserved or charged (reservedMicroUsd is forced to 0 below).
-    const prepaidTokenMode = buyer.token_budget_total != null;
+    const prepaidTokenMode = buyer.token_budget_total != null || buyer.is_unlimited === 1;
     let reservedMicroUsd = normalizeAmount(input.reservedMicroUsd);
     const reservedTokens =
       normalizeAmount(input.reservedPromptTokens) + normalizeAmount(input.reservedCompletionTokens);
@@ -1172,7 +1180,7 @@ export function reserveMarketplaceUsage(input: ReserveMarketplaceUsageInput): {
       reservedMicroUsd = 0;
       // Дальше удержания до фактического достижения бюджета
       const tokensUsed = buyer.tokens_used ?? 0;
-      if (tokensUsed >= (buyer.token_budget_total ?? 0)) {
+      if (buyer.is_unlimited !== 1 && tokensUsed >= (buyer.token_budget_total ?? 0)) {
         throw new MarketplaceDbError(
           402,
           `Prepaid key budget exhausted: ${tokensUsed} used of ${buyer.token_budget_total}`
@@ -1285,7 +1293,7 @@ export function finalizeMarketplaceUsage(
       normalizeAmount(event.reserved_prompt_tokens) +
       normalizeAmount(event.reserved_completion_tokens);
     const actualTotalTokens = input.totalTokens == null ? 0 : normalizeAmount(input.totalTokens);
-    if (buyer.token_budget_total != null) {
+    if (buyer.token_budget_total != null || buyer.is_unlimited === 1) {
       const tokensUsedAfter =
         (buyer.tokens_used ?? 0) + (input.status === "succeeded" ? actualTotalTokens : 0);
       const tokensReservedAfter = Math.max(0, (buyer.tokens_reserved ?? 0) - reservedEventTokens);
@@ -1480,6 +1488,7 @@ export interface MarketplacePrepaidKeyStatus {
   name: string;
   keyPrefix: string;
   allowedModels: string[];
+  unlimited: boolean;
   /** Null when the key is not prepaid-token (USD-funded instead). */
   tokens: {
     total: number;
@@ -1613,6 +1622,7 @@ export function getMarketplacePrepaidKeyStatus(
     name: row.name,
     keyPrefix: row.key_prefix,
     allowedModels: parseStringArray(row.allowed_models_json),
+    unlimited: row.is_unlimited === 1,
     tokens:
       row.token_budget_total != null
         ? {
@@ -1631,7 +1641,7 @@ export function getMarketplacePrepaidKeyStatus(
 export function listPrepaidMarketplaceBuyerKeysWithStats() {
   const rows = getDb()
     .prepare<BuyerKeyRow & { key_enc?: string | null }>(
-      "SELECT * FROM marketplace_buyer_keys WHERE token_budget_total IS NOT NULL ORDER BY created_at DESC"
+      "SELECT * FROM marketplace_buyer_keys WHERE token_budget_total IS NOT NULL OR is_unlimited = 1 ORDER BY created_at DESC"
     )
     .all();
   return rows.map((row) => {
@@ -1652,7 +1662,7 @@ export function listPrepaidMarketplaceBuyerKeysWithStats() {
 export function listPrepaidMarketplaceBuyerKeys(): MarketplaceBuyerKey[] {
   return getDb()
     .prepare<BuyerKeyRow>(
-      "SELECT * FROM marketplace_buyer_keys WHERE token_budget_total IS NOT NULL ORDER BY created_at DESC"
+      "SELECT * FROM marketplace_buyer_keys WHERE token_budget_total IS NOT NULL OR is_unlimited = 1 ORDER BY created_at DESC"
     )
     .all()
     .map(buyerKeyFromRow);
@@ -1676,14 +1686,14 @@ export function reservePrepaidTokens(buyerKeyId: string, tokens: number): void {
     if (buyer.expires_at && Date.parse(buyer.expires_at) <= Date.now()) {
       throw new MarketplaceDbError(401, "Marketplace buyer key has expired");
     }
-    if (buyer.token_budget_total == null) {
+    if (buyer.token_budget_total == null && buyer.is_unlimited !== 1) {
       throw new MarketplaceDbError(400, "Buyer key is not a prepaid key");
     }
     const usedSoFar = buyer.tokens_used ?? 0;
     // Пользовательский запрос: ключ действует пока фактическое использование
     // не достигло бюджета (не блокируем «до отметки»). Резерв сверху остатка
     // допустим — финальная сверка и авто-отключение происходят на settle.
-    if (usedSoFar >= buyer.token_budget_total) {
+    if (buyer.is_unlimited !== 1 && usedSoFar >= buyer.token_budget_total!) {
       throw new MarketplaceDbError(
         402,
         `Prepaid key budget exhausted: ${usedSoFar} used of ${buyer.token_budget_total}`
@@ -1733,6 +1743,7 @@ export function settlePrepaidTokens(
          SET status = 'disabled', updated_at = ?
          WHERE id = ? AND status = 'active'
            AND token_budget_total IS NOT NULL
+           AND is_unlimited = 0
            AND COALESCE(tokens_used, 0) >= token_budget_total`
       ).run(now, buyerKeyId);
     }

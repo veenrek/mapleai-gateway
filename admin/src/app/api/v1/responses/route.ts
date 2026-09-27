@@ -81,7 +81,7 @@ async function postHandler(request, context) {
     if (!buyerKey) {
       return marketplaceError(401, "Invalid marketplace buyer key", "unauthorized");
     }
-    if (buyerKey.tokenBudgetTotal != null) {
+    if (buyerKey.tokenBudgetTotal != null || buyerKey.isUnlimited) {
       return handlePrepaidChatCompletion(request, buyerKey);
     }
     return handleMarketplaceChatCompletion(request, buyerKey);
