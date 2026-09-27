@@ -61,6 +61,20 @@ function modelListMarkdown(): string {
     .join("\n");
 }
 
+/** Pack price with enough decimals for sub-cent packs: 0.28, 2.80, 0.007. */
+function packPrice(usd: number): string {
+  return usd >= 0.01 ? usd.toFixed(2) : usd.toFixed(4).replace(/0+$/, "");
+}
+
+function prepaidPriceRowsHtml(): string {
+  return catalog()
+    .map(
+      (m) =>
+        `<tr><td><code>${m.id}</code></td><td>$${packPrice(m.pricing.input / 10)}</td><td>$${packPrice(m.pricing.input)}</td></tr>`,
+    )
+    .join("\n");
+}
+
 function modelTableMarkdown(): string {
   const rows = catalog().map(
     (m) =>
@@ -207,6 +221,15 @@ export function docVars(origin: string): DocVars {
     AGENT_NFT: nftEnabled ? '## NFT Contract Metadata\n\nGET ' + origin + '/api/v1/{chainNetwork}/nft/getNFTMetadata?contractAddress=0x... costs $0.002 USDC per request via x402. Networks: ' + Object.keys(nftNetworks).join(', ') + '. Returns on-chain name, symbol, contractURI, tokenType and ERC interface support; unsupported fields are null. Does not retrieve wallet holdings or off-chain token metadata.\n\n' : '',
     AGENT_PREPAID: prepaidCodesEnabled ? '## Prepaid API Keys\n\nPOST ' + origin + '/prepaid/codes (x402-paid) issues a prepaid bearer key for one GPT model with a token budget in 100000-token steps from 100000 to 1000000, priced at the model input rate plus settlement fee. Use the key at https://mapleai.shop/v1 (OpenAI-compatible). Check usage and status for free: GET ' + prepaidStatusUrl + ' with the prepaid key as the Bearer token — returns valid, reason and tokens total/used/reserved/remaining.\n\n' : '',
     AGENT_PREPAID_ENDPOINT: prepaidCodesEnabled ? '| POST | /prepaid/codes | Buy a prepaid API key |\n| GET | https://mapleai.shop/v1/prepaid/status | Prepaid key usage and status (free) |' : '',
+    HOME_PREPAID_NAV: prepaidCodesEnabled ? '<a href="#prepaid">Prepaid</a>' : '',
+    HOME_PREPAID: prepaidCodesEnabled ? '<section id="prepaid"><h2>Prepaid API keys</h2><p class="h2sub">Token packs for one GPT model: 0.1M-1M tokens at the model input rate, in 0.1M steps.</p><p><code>POST /prepaid/codes</code> &nbsp; <a href="/developers#prepaid">API guide</a></p></section>' : '',
+    DEVELOPER_PREPAID_NAV: prepaidCodesEnabled ? '<a href="#prepaid">Prepaid</a>' : '',
+    DEVELOPER_PREPAID: prepaidCodesEnabled ? '<section id="prepaid"><h2>Prepaid API keys</h2><p class="muted">Buy a prepaid bearer key for one GPT model with x402. The budget counts total tokens (input + output) in 100000-token steps from 100000 to 1000000 and is priced at the model input rate, plus the network settlement fee shown in the 402 challenge. The key works at <code>https://mapleai.shop/v1</code> (OpenAI-compatible).</p>' +
+      '<div class="table-scroll"><table><thead><tr><th>Model</th><th>0.1M pack</th><th>1M pack</th></tr></thead><tbody>' + prepaidPriceRowsHtml() + '</tbody></table></div>' +
+      '<div class="snippet"><div class="snippet-title">Buy a prepaid key</div><pre><code>POST ' + origin + '/prepaid/codes\ncontent-type: application/json\n\n{"model":"openai/gpt-6-luna","tokens":100000}</code></pre></div>' +
+      '<div class="snippet"><div class="snippet-title">Response (after x402 payment)</div><pre><code>{"object":"prepaid_code","code":"oms_buy_...","model":"openai/gpt-6-luna",\n "tokens":{"total":100000,"remaining":100000},\n "api_base":"https://mapleai.shop/v1",\n "status_url":"' + prepaidStatusUrl + '"}</code></pre></div>' +
+      '<div class="snippet"><div class="snippet-title">Check key usage and status (free)</div><pre><code>curl ' + prepaidStatusUrl + ' \\\n  -H "Authorization: Bearer oms_buy_..."</code></pre></div>' +
+      '<p class="muted">Status returns <code>valid</code>, <code>reason</code> and <code>tokens</code> with total/used/reserved/remaining. An exhausted key answers <code>valid: false, reason: "disabled"</code> — buy a fresh pack to continue.</p></section>' : '',
     DEVELOPER_JEV_NAV: jevEnabled ? '<a href="#jev">Jev</a>' : '',
     DEVELOPER_JEV: jevEnabled ? '<section id="jev"><h2>Jev</h2><p class="muted"><code>' + jevModel +
       '</code> evaluates structured questions through SystemOne. $' + jevPricePerMillion?.toFixed(2) +
