@@ -50,8 +50,15 @@ const EXPECTED_EVM = '0x63db6eaf635a31bbc6714fe37bdc85243864f611';
 document.getElementById('svmBtn').onclick = async () => {
   const st = document.getElementById('svmStatus');
   try {
-    const sol = window.phantom?.solana;
-    if (!sol) { st.textContent = 'Phantom не найден — установи расширение и обнови страницу'; return; }
+    // Newer Phantom injects window.phantom.solana; some builds/extensions only expose window.solana.
+    const sol = window.phantom?.solana ?? window.solana;
+    if (!sol || typeof sol.connect !== 'function') {
+      st.textContent = 'Phantom не найден. Проверь, что страница открыта в браузере с расширением Phantom, ' +
+        'что ему разрешён доступ к file://-страницам (Manage extensions → Phantom → Site access), ' +
+        'что кошелёк разблокирован, и обнови страницу. Надёжнее всего — открыть страницу через ' +
+        'локальный сервер: в папке проекта выполни `npx serve tools` и зайди на http://localhost:3000/sign-ownership.html';
+      return;
+    }
     const res = await sol.connect();
     const addr = res.publicKey.toString();
     if (addr !== EXPECTED_SVM) { st.textContent = 'Подключён не treasury-адрес: ' + addr; return; }
