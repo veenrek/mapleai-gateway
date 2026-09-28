@@ -1308,18 +1308,61 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
             summary: "Create free embeddings",
             operationId: "createEmbeddings",
             security: [],
-            description: `Free NVIDIA Nemotron embeddings. Every request is routed to ${embeddingModel}; any supplied model value is ignored.`,
+            description:
+              `Free NVIDIA Nemotron embeddings. Every request is routed to ${embeddingModel}; ` +
+              "any supplied model value is ignored. Discovery and health probes that send a body " +
+              "containing only a model field (no input) receive HTTP 200 with an empty data list " +
+              "and a hint describing the expected input, so automated crawlers pass on the first try. ",
             requestBody: {
               required: true,
               content: {
                 "application/json": {
                   schema: embeddingRequestSchema,
                   example: { input: "Hello", input_type: "query", encoding_format: "float" },
+                  examples: {
+                    single: {
+                      summary: "Single text",
+                      value: { input: "Hello", input_type: "query", encoding_format: "float" },
+                    },
+                    batch: {
+                      summary: "Batch of texts (max 128)",
+                      value: { input: ["first document", "second document"], input_type: "passage" },
+                    },
+                    probe: {
+                      summary: "Discovery probe (model-only body returns 200 with a hint)",
+                      value: { model: "nvidia/nemotron-3-embed-1b" },
+                    },
+                  },
                 },
               },
             },
             responses: {
-              "200": { description: "Embedding vectors" },
+              "200": {
+                description: "Embedding vectors per input, or an empty data list with a hint for model-only probes.",
+                content: {
+                  "application/json": {
+                    examples: {
+                      embeddings: {
+                        summary: "Embeddings response",
+                        value: {
+                          object: "list",
+                          data: [{ object: "embedding", index: 0, embedding: [0.0123, -0.0456] }],
+                          model: "nvidia/nemotron-3-embed-1b",
+                        },
+                      },
+                      probe: {
+                        summary: "Probe response (model-only body)",
+                        value: {
+                          object: "list",
+                          data: [],
+                          model: "nvidia/nemotron-3-embed-1b",
+                          hint: 'Send {"input": "your text"} or {"input": ["up to 128 strings"]}',
+                        },
+                      },
+                    },
+                  },
+                },
+              },
               "400": {
                 description: "Invalid request body. The error includes the expected request schema.",
                 content: { "application/json": { schema: embeddingValidationErrorSchema } },
