@@ -1,7 +1,7 @@
 {
   "name": "mapleai-mcp",
   "version": "0.2.0",
-  "description": "Local MCP tools for MapleAI models with x402 USDC payments",
+  "description": "Local MCP tools for MapleAI GPT, images, embeddings and prepaid keys with x402 USDC payments",
   "type": "module",
   "bin": {
     "mapleai-mcp": "dist/server.js",
@@ -34,5 +34,24 @@
   "devDependencies": {
     "@types/node": "^24.0.0",
     "typescript": "^5.9.0"
-  }
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "x402",
+    "usdc",
+    "llm",
+    "gpt",
+    "openai-compatible",
+    "embeddings",
+    "image-generation",
+    "solana",
+    "base",
+    "polygon",
+    "arc",
+    "ai-agents"
+  ],
+  "license": "UNLICENSED",
+  "author": "MapleAI <contact@mapleai.shop>",
+  "homepage": "https://sol.mapleai.shop"
 }
