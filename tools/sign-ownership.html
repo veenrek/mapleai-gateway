@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MapleAI — x402scan ownership proofs</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 860px; margin: 2rem auto; padding: 0 1rem; }
+  button { padding: .5rem 1rem; margin: .25rem 0; cursor: pointer; }
+  pre { background: #f4f4f4; padding: 1rem; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+  .ok { color: #070; } .warn { color: #a60; }
+</style>
+</head>
+<body>
+<h1>Сбор ownership-proof подписей для x402scan</h1>
+<p>Подписываются строки origin. Ключи остаются в кошельках — страница ничего никуда не отправляет,
+она только просит Phantom / MetaMask подписать сообщение и показывает подписи.</p>
+<ol>
+  <li>Solana (Phantom, treasury: <code>9DbpH2Mf9D26ak4bASsv6KA4Ra4V571oLpiVdZjAjcU8</code>):
+    <div id="svmStatus" class="warn">не подключено</div>
+    <button id="svmBtn">Connect Phantom &amp; sign https://sol.mapleai.shop</button></li>
+  <li>EVM (MetaMask/Rabby, treasury: <code>0x63db6eaf635a31bbc6714fe37bdc85243864f611</code>):
+    <div id="evmStatus" class="warn">не подключено</div>
+    <button id="evmBtn">Connect EVM wallet &amp; sign base/polygon/arc</button></li>
+</ol>
+<h2>Подписи (отправь этот блок мне)</h2>
+<pre id="out">(пока пусто)</pre>
+<script>
+const out = [];
+function refresh(){ document.getElementById('out').textContent = out.length ? out.join('\n\n') : '(пока пусто)'; }
+
+const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+function toBase58(bytes){
+  let zeros = 0; while (zeros < bytes.length && bytes[zeros] === 0) zeros++;
+  let num = []; // little-endian base256 of the payload as big-number digits
+  for (let i = zeros; i < bytes.length; i++) {
+    let carry = bytes[i];
+    for (let j = 0; j < num.length; j++) { carry += num[j] << 8; num[j] = carry % 58; carry = Math.floor(carry / 58); }
+    while (carry) { num.push(carry % 58); carry = Math.floor(carry / 58); }
+  }
+  let s = '1'.repeat(zeros);
+  for (let i = num.length - 1; i >= 0; i--) s += B58[num[i]];
+  return s;
+}
+function toHex(bytes){ return '0x' + [...bytes].map(b => b.toString(16).padStart(2,'0')).join(''); }
+function utf8Hex(s){ return toHex(new TextEncoder().encode(s)); }
+
+const EXPECTED_SVM = '9DbpH2Mf9D26ak4bASsv6KA4Ra4V571oLpiVdZjAjcU8';
+const EXPECTED_EVM = '0x63db6eaf635a31bbc6714fe37bdc85243864f611';
+
+document.getElementById('svmBtn').onclick = async () => {
+  const st = document.getElementById('svmStatus');
+  try {
+    const sol = window.phantom?.solana;
+    if (!sol) { st.textContent = 'Phantom не найден — установи расширение и обнови страницу'; return; }
+    const res = await sol.connect();
+    const addr = res.publicKey.toString();
+    if (addr !== EXPECTED_SVM) { st.textContent = 'Подключён не treasury-адрес: ' + addr; return; }
+    st.textContent = 'подключено: ' + addr;
+    st.className = 'ok';
+    const msg = 'https://sol.mapleai.shop';
+    const { signature } = await sol.signMessage(new TextEncoder().encode(msg), 'utf8');
+    out.push('SOL origin: ' + msg + '\nsignature (base58): ' + toBase58(new Uint8Array(signature)));
+    refresh();
+  } catch (e) { document.getElementById('svmStatus').textContent = 'отказ/ошибка: ' + (e?.message || e); }
+};
+
+document.getElementById('evmBtn').onclick = async () => {
+  const st = document.getElementById('evmStatus');
+  try {
+    const eth = window.ethereum;
+    if (!eth) { st.textContent = 'EVM-кошелёк не найден'; return; }
+    const accounts = await eth.request({ method: 'eth_requestAccounts' });
+    const addr = accounts[0];
+    if (addr.toLowerCase() !== EXPECTED_EVM.toLowerCase()) { st.textContent = 'Подключён не treasury-адрес: ' + addr; return; }
+    st.textContent = 'подключено: ' + addr;
+    st.className = 'ok';
+    for (const msg of ['https://base.mapleai.shop', 'https://polygon.mapleai.shop', 'https://arc.mapleai.shop']) {
+      const sig = await eth.request({ method: 'personal_sign', params: [utf8Hex(msg), addr] });
+      out.push('EVM origin: ' + msg + '\nsignature (hex): ' + sig);
+    }
+    refresh();
+  } catch (e) { document.getElementById('evmStatus').textContent = 'отказ/ошибка: ' + (e?.message || e); }
+};
+</script>
+</body>
+</html>
