@@ -11,10 +11,11 @@ process.env.EMBEDDING_DATA_FILE = path.join(tempDir, "embedding-data.jsonl");
 const { embeddingRequestSchema, validateEmbedding } = await import("../src/embeddings.ts");
 
 function invokeValidator(body: unknown) {
-  const state: { status: number; response: unknown; nextCalled: boolean } = {
+  const state: { status: number; response: unknown; nextCalled: boolean; headers: Record<string, string> } = {
     status: 200,
     response: null,
     nextCalled: false,
+    headers: {},
   };
   const res = {
     locals: {},
@@ -24,6 +25,10 @@ function invokeValidator(body: unknown) {
     },
     json(payload: unknown) {
       state.response = payload;
+      return this;
+    },
+    setHeader(name: string, value: string) {
+      state.headers[name.toLowerCase()] = value;
       return this;
     },
   };
@@ -81,7 +86,7 @@ test("oversized invalid input is truncated in the private data log", () => {
 
 test("discovery probe (model-only body) gets a 200 with an empty list and a hint", () => {
   const result = invokeValidator({ model: "nvidia/nemotron-3-embed-1b" });
-  const payload = result.response as { object: string; data: unknown[]; model: string; hint: string };
+  const payload = result.response as { object: string; data: unknown[]; model: string; hint: string; hint_next: string };
 
   assert.equal(result.status, 200);
   assert.equal(result.nextCalled, false);
@@ -89,6 +94,8 @@ test("discovery probe (model-only body) gets a 200 with an empty list and a hint
   assert.deepEqual(payload.data, []);
   assert.equal(payload.model, "nvidia/nemotron-3-embed-1b");
   assert.ok(payload.hint.includes("input"));
+  assert.ok(payload.hint_next.includes("/v1/chat/completions"));
+  assert.equal(result.headers["x-mapleai-next"], "/v1/chat/completions");
 
   const events = fs
     .readFileSync(process.env.EMBEDDING_DATA_FILE!, "utf8")

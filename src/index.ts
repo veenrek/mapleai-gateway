@@ -24,6 +24,8 @@ import { fetchJev, jevEnabled, jevModel, jevPricePerMillion, quoteJev, validateJ
 import {
   embeddingModel,
   embeddingRequestSchema,
+  embeddingNextEndpoint,
+  embeddingNextHint,
   embeddingValidationErrorSchema,
   embeddingsEnabled,
   fetchEmbeddings,
@@ -32,6 +34,7 @@ import {
 import { embeddingStats, recordEmbeddingData, trackEmbeddingRequest } from "./embedding-stats.js";
 import {
   issuePrepaidCode,
+  normalizeAutoPurchase,
   prepaidCodeExample,
   prepaidCodeInputSchema,
   prepaidCodeModels,
@@ -342,6 +345,17 @@ const PAID_ROUTES = {
       (context) => quotePrepaidCode(requestBody(context) as { model: string; tokens: number }),
       false,
     ),
+    "POST /prepaid/codes/auto": paidRoute(
+      "One-shot prepaid tap: empty body buys a 100000-token openai/gpt-6-luna key",
+      declareDiscoveryExtension({
+        input: {},
+        inputSchema: { type: "object", properties: { model: { type: "string", enum: prepaidCodeModels }, tokens: { type: "integer" } } },
+        bodyType: "json",
+        output: { example: prepaidCodeOutputExample },
+      }),
+      (context) => quotePrepaidCode(normalizeAutoPurchase(requestBody(context))),
+      false,
+    ),
   } : {}),
 };
 
@@ -352,8 +366,7 @@ if (imagesEnabled) {
   app.post("/api/v1/images/image2image", validateImage("edit"));
 }
 if (jevEnabled) app.post("/jev", validateJev);
-if (prepaidCodesEnabled) app.post("/prepaid/codes", validatePrepaidCodePurchase);
-if (prepaidCodesEnabled) app.post("/prepaid/codes", async (req, res) => {
+async function handlePrepaidCodePurchase(req: Request, res: Response): Promise<void> {
   try {
     const purchase = await issuePrepaidCode(
       req.body as { model: string; tokens: number },
@@ -374,7 +387,12 @@ if (prepaidCodesEnabled) app.post("/prepaid/codes", async (req, res) => {
     console.error("[prepaid-codes] issuance failed:", error instanceof Error ? error.message : "unknown");
     res.status(503).json({ error: { message: "Prepaid code issuance is temporarily unavailable", type: "issuer_unavailable" } });
   }
-});
+}
+
+if (prepaidCodesEnabled) app.post("/prepaid/codes", validatePrepaidCodePurchase, (req, res) => { void handlePrepaidCodePurchase(req, res); });
+// Agent "tap": the paywall has already run; merge the auto defaults before validation.
+if (prepaidCodesEnabled) app.post("/prepaid/codes/auto", (req, _res, next) => { req.body = normalizeAutoPurchase(req.body); next(); },
+  validatePrepaidCodePurchase, (req, res) => { void handlePrepaidCodePurchase(req, res); });
 
 if (nftEnabled) {
   for (const network of Object.keys(nftNetworks) as NftNetwork[]) {
@@ -738,6 +756,7 @@ if (embeddingsEnabled) app.post("/v1/embeddings", async (req, res) => {
     const upstream = await fetchEmbeddings(req.body);
     const raw = await upstream.text();
     recordEmbeddingData(req.body, raw, upstream.status, req.get("host") ?? "unknown", embeddingModel);
+    res.setHeader("x-mapleai-next", embeddingNextEndpoint);
     if (!upstream.ok) {
       let message = "NVIDIA returned HTTP " + upstream.status;
       try {
@@ -748,7 +767,13 @@ if (embeddingsEnabled) app.post("/v1/embeddings", async (req, res) => {
       res.locals.embeddingFailure = { source: "upstream", reason: "upstream_http_" + upstream.status, message };
       res.status(upstream.status).type("application/json").send(raw); return;
     }
-    res.status(200).type("application/json").send(raw);
+    try {
+      const data = JSON.parse(raw);
+      if (data && typeof data === "object" && !Array.isArray(data)) data.hint_next = embeddingNextHint;
+      res.status(200).json(data);
+    } catch {
+      res.status(200).type("application/json").send(raw);
+    }
   } catch (error) {
     console.error("[embeddings] upstream request failed:", error instanceof Error ? error.name : "unknown");
     res.locals.embeddingFailure = { source: "transport", reason: error instanceof Error ? error.name : "unknown", message: "Embeddings upstream connection failed" };
@@ -918,6 +943,13 @@ app.get("/.well-known/x402", (req: Request, res: Response) => {
         pricedBy: "input rate * tokens + network settlement fee",
         exampleBody: prepaidCodeExample,
         outputExample: prepaidCodeOutputExample,
+      }, {
+        method: "POST",
+        path: "/prepaid/codes/auto",
+        description: "One-shot agent tap: empty body buys the default 100000-token openai/gpt-6-luna key",
+        pricedBy: "input rate * tokens + network settlement fee",
+        exampleBody: {},
+        outputExample: prepaidCodeOutputExample,
       }] : []),
       {
         method: "GET",
@@ -1043,6 +1075,15 @@ app.get("/service-endpoints.json", (req: Request, res: Response) => {
       outputExample: prepaidCodeOutputExample,
     });
     endpoints.push({
+      method: "POST",
+      path: "/prepaid/codes/auto",
+      access: "x402",
+      description: "Agent tap: empty body buys the default 100000-token openai/gpt-6-luna key",
+      pricing: { kind: "pack", models: prepaidModelOffers(), overheadUsd: config.minChargeUsd },
+      example: {},
+      outputExample: prepaidCodeOutputExample,
+    });
+    endpoints.push({
       method: "GET",
       url: prepaidStatusUrl,
       access: "prepaid_bearer",
@@ -1099,6 +1140,20 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
   const models = catalog();
   const origin = originOf(req);
   const modelIds = models.map((m) => m.id);
+
+  // Replayable requests: each listed cURL is verified to return 200/201 after
+  // the 402 challenge gets a valid PAYMENT-SIGNATURE.
+  const workedCurl = (method: string, path: string, body?: unknown): string =>
+    "curl -X " + method + " " + origin + path +
+    (body === undefined
+      ? ""
+      : " \\\n  -H 'content-type: application/json' \\\n  -d '" + JSON.stringify(body) + "'");
+  const workedExample = (method: string, path: string, body: unknown, paid: boolean) => ({
+    curl: workedCurl(method, path, body),
+    ...(paid
+      ? { payment: "x402", firstAttempt: "402 with PAYMENT-REQUIRED; sign and retry with PAYMENT-SIGNATURE" }
+      : { payment: "none" }),
+  });
 
   const modelPricing = {
     type: "dynamic",
@@ -1320,10 +1375,10 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
     },
   };
 
-  const successfulResponse = (schema: Record<string, unknown>) => ({
+  const successfulResponse = (schema: Record<string, unknown>, example?: unknown) => ({
     description: "Successful completion. Set stream: true for server-sent events.",
     content: {
-      "application/json": { schema },
+      "application/json": { schema, ...(example === undefined ? {} : { example }) },
       "text/event-stream": {
         schema: { type: "string", description: "Server-sent events ending with data: [DONE]" },
       },
@@ -1331,7 +1386,14 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
   });
 
   const paidResponses = {
-    "200": successfulResponse(chatCompletionSchema),
+    "200": successfulResponse(chatCompletionSchema, {
+      id: "chatcmpl_worked",
+      object: "chat.completion",
+      created: 1700000000,
+      model: models[0]?.id,
+      choices: [{ index: 0, message: { role: "assistant", content: "OK" }, finish_reason: "stop" }],
+      usage: { prompt_tokens: 11, completion_tokens: 5, total_tokens: 16 },
+    }),
     "400": { description: "Unknown or missing model" },
     "402": {
       description: "Payment required",
@@ -1345,7 +1407,17 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
   };
   const responsesApiResponses = {
     ...paidResponses,
-    "200": successfulResponse(responseSchema),
+    "200": successfulResponse(responseSchema, {
+      id: "resp_worked",
+      object: "response",
+      created_at: 1700000000,
+      status: "completed",
+      model: models[0]?.id,
+      output: [{ id: "msg_worked", type: "message", status: "completed", role: "assistant",
+        content: [{ type: "output_text", text: "OK", annotations: [] }] }],
+      output_text: "OK",
+      usage: { input_tokens: 11, output_tokens: 5, total_tokens: 16 },
+    }),
   };
 
   const imageResponse = {
@@ -1413,18 +1485,22 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
       },
     },
     paths: {
-      ...(nftEnabled ? Object.fromEntries(Object.keys(nftNetworks).map((network) => ["/api/v1/" + network + "/nft/getNFTMetadata", { get: {
+      ...(nftEnabled ? Object.fromEntries(Object.keys(nftNetworks)
+      .map((network) => ["/api/v1/" + network + "/nft/getNFTMetadata", { get: {
         summary: "Get NFT contract metadata", description: nftDescription + ". Returns on-chain contract metadata; optional fields are null when unsupported. Does not enumerate wallet NFTs or fetch off-chain token metadata.",
         operationId: "getNFTMetadata_" + network.replace(/-/g, "_"), security: [{ x402: [] }],
+        "x-worked-example": workedExample("GET", "/api/v1/" + network + "/nft/getNFTMetadata?contractAddress=" + nftExampleAddress, undefined, true),
         "x-payment-info": { price: { mode: "fixed", amount: 0.002, currency: "USD" }, protocols: [{ x402: {} }] },
         parameters: [{ name: "contractAddress", in: "query", required: true, schema: { type: "string", pattern: "^0x[0-9a-fA-F]{40}$" }, example: nftExampleAddress }],
         responses: { "200": { description: "On-chain NFT contract metadata" }, "400": { description: "Invalid contract address" }, "402": paidResponses["402"], "404": { description: "Contract not found" }, "502": { description: "Infura unavailable" } },
       } }])) : {}),
       ...(imagesEnabled ? {
         "/api/v1/images/generations": { post: { summary: "Generate images", operationId: "generateImages", security: [{ x402: [] }],
+          "x-worked-example": workedExample("POST", "/api/v1/images/generations", imageExample, true),
           "x-payment-info": { price: { mode: "dynamic", currency: "USD" }, protocols: [{ x402: {} }] },
           "x-pricing": { unit: "USD per image", models: imageRates }, requestBody: imageBody(false), responses: imageResponse } },
         "/api/v1/images/image2image": { post: { summary: "Edit an image", operationId: "editImage", security: [{ x402: [] }],
+          "x-worked-example": workedExample("POST", "/api/v1/images/image2image", imageEditExample, true),
           "x-payment-info": { price: { mode: "dynamic", currency: "USD" }, protocols: [{ x402: {} }] },
           "x-pricing": { unit: "USD per image", models: imageRates }, requestBody: imageBody(true), responses: imageResponse } },
       } : {}),
@@ -1442,6 +1518,7 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
               "Check key usage and status any time: GET https://mapleai.shop/v1/prepaid/status " +
               "with the prepaid key as the Bearer token.",
             "x-payment-info": { price: { mode: "dynamic", currency: "USD" }, protocols: [{ x402: {} }] },
+            "x-worked-example": workedExample("POST", "/prepaid/codes", prepaidCodeExample, true),
             "x-pricing": {
               unit: "prepaid token pack",
               models: Object.fromEntries(prepaidCodeModels.map((model) => [model, pricingForModel(model)])),
@@ -1458,6 +1535,29 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
             },
           },
         },
+        "/prepaid/codes/auto": {
+          post: {
+            summary: "One-shot prepaid tap (empty body)",
+            operationId: "buyPrepaidCodeAuto",
+            security: [{ x402: [] }],
+            description:
+              "POST with an empty or partial body: defaults buy a 100000-token " +
+              "openai/gpt-6-luna prepaid key without any parameters. " +
+              "Optional model and tokens override follow the same rules as /prepaid/codes.",
+            "x-payment-info": { price: { mode: "dynamic", currency: "USD" }, protocols: [{ x402: {} }] },
+            "x-worked-example": workedExample("POST", "/prepaid/codes/auto", {}, true),
+            requestBody: {
+              required: false,
+              content: { "application/json": { schema: { type: "object", properties: { model: { type: "string", enum: prepaidCodeModels }, tokens: { type: "integer", minimum: 100_000, maximum: 1_000_000 } } }, example: {} } },
+            },
+            responses: {
+              "201": { description: "Prepaid bearer API key", content: { "application/json": { example: prepaidCodeOutputExample } } },
+              "400": { description: "Invalid model or token amount" },
+              "402": paidResponses["402"],
+              "503": { description: "Prepaid key issuer unavailable" },
+            },
+          },
+        },
       } : {}),
       ...(embeddingsEnabled ? {
         "/v1/embeddings": {
@@ -1465,6 +1565,7 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
             summary: "Create free embeddings",
             operationId: "createEmbeddings",
             security: [],
+            "x-worked-example": workedExample("POST", "/v1/embeddings", { input: "Hello", input_type: "query", encoding_format: "float" }, false),
             description:
               `Free NVIDIA Nemotron embeddings. Every request is routed to ${embeddingModel}; ` +
               "any supplied model value is ignored. Discovery and health probes that send a body " +
@@ -1532,6 +1633,7 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
       ...(jevEnabled ? { "/jev": { post: { summary: "Run Jev structured decision", operationId: "runJev",
         description: "SystemOne protocol for jev-latest. Returns structured answers, not chat text.",
         security: [{ x402: [] }],
+        "x-worked-example": workedExample("POST", "/jev", jevExample, true),
         "x-payment-info": { price: { mode: "dynamic", currency: "USD" }, protocols: [{ x402: {} }] },
         "x-pricing": { unit: "USD per 1M tokens", input: jevPricePerMillion, output: 0 },
         requestBody: { required: true, content: { "application/json": { example: jevExample, schema: jevSchema } } },
@@ -1547,6 +1649,7 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
           description: CHAT_DESCRIPTION,
           operationId: "createChatCompletion",
           security: [{ x402: [] }],
+          "x-worked-example": workedExample("POST", "/v1/chat/completions", { model: models[0]?.id, messages: [{ role: "user", content: "Hello" }], max_tokens: 8 }, true),
           "x-payment-info": paymentInfo,
           "x-pricing": modelPricing,
           requestBody: chatBody,
@@ -1559,6 +1662,7 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
           description: `${CHAT_DESCRIPTION}. Alias of /v1/chat/completions for agent crawlers.`,
           operationId: "createChatCompletionAlias",
           security: [{ x402: [] }],
+          "x-worked-example": workedExample("POST", "/api/v1/chat/completions", { model: models[0]?.id, messages: [{ role: "user", content: "Hello" }], max_tokens: 8 }, true),
           "x-payment-info": paymentInfo,
           "x-pricing": modelPricing,
           requestBody: chatBody,
@@ -1572,6 +1676,7 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
             "OpenAI-compatible Responses API (alpha). Translated to a chat completion upstream.",
           operationId: "createResponse",
           security: [{ x402: [] }],
+          "x-worked-example": workedExample("POST", "/api/v1/responses", { model: models[0]?.id, input: "Hello", max_output_tokens: 8 }, true),
           "x-payment-info": paymentInfo,
           "x-pricing": modelPricing,
           requestBody: responsesBody,
@@ -1585,6 +1690,7 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
             "Alias of /api/v1/responses. OpenAI-compatible Responses API (alpha), translated to a chat completion upstream.",
           operationId: "createResponseAlias",
           security: [{ x402: [] }],
+          "x-worked-example": workedExample("POST", "/v1/responses", { model: models[0]?.id, input: "Hello", max_output_tokens: 8 }, true),
           "x-payment-info": paymentInfo,
           "x-pricing": modelPricing,
           requestBody: responsesBody,

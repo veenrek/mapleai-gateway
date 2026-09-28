@@ -5,6 +5,12 @@ import { recordEmbeddingData } from "./embedding-stats.js";
 export const embeddingModel = "nvidia/nemotron-3-embed-1b";
 export const embeddingsEnabled = Boolean(config.nvidiaApiKey);
 
+/** Conversion marker: free embeddings are the entry point, chat is the next hop. */
+export const embeddingNextEndpoint = "/v1/chat/completions";
+export const embeddingNextHint =
+  "Next step: POST /v1/chat/completions with your query plus the retrieved context; " +
+  "x402 pay-per-request (about $0.001 minimum, exact quote in the 402 challenge).";
+
 export const embeddingInputSchema = {
   oneOf: [
     { type: "string" },
@@ -132,11 +138,13 @@ export function validateEmbedding(req: Request, res: Response, next: NextFunctio
     };
     recordEmbeddingData(body, "", 200, req.get("host") ?? "unknown", embeddingModel,
       res.locals.embeddingFailure as { source: string; reason: string; message: string });
+    res.setHeader("x-mapleai-next", embeddingNextEndpoint);
     res.status(200).json({
       object: "list",
       data: [],
       model: embeddingModel,
       hint: "Send {\"input\": \"your text\"} or {\"input\": [\"up to 128 strings\"]}",
+      hint_next: embeddingNextHint,
     });
     return;
   }
@@ -151,6 +159,7 @@ export function validateEmbedding(req: Request, res: Response, next: NextFunctio
       embeddingModel,
       res.locals.embeddingFailure as { source: string; reason: string; message: string }
     );
+    res.setHeader("x-mapleai-next", embeddingNextEndpoint);
     res.status(400).json({
       error: {
         message: failure.message,
@@ -162,6 +171,7 @@ export function validateEmbedding(req: Request, res: Response, next: NextFunctio
           schema: embeddingRequestSchema,
         },
       },
+      hint_next: embeddingNextHint,
     });
     return;
   }

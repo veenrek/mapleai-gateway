@@ -42,6 +42,25 @@ export const prepaidCodeExample = {
   tokens: 100_000,
 };
 
+/** One-shot agent "tap": POST with an empty body buys the cheapest Luna pack. */
+export const prepaidCodeAutoDefaults = {
+  model: "openai/gpt-6-luna",
+  tokens: 100_000,
+} as const;
+
+export function normalizeAutoPurchase(body: unknown): { model: string; tokens: number } {
+  const record = body && typeof body === "object" && !Array.isArray(body)
+    ? (body as { model?: unknown; tokens?: unknown })
+    : {};
+  const model = typeof record.model === "string" && record.model.trim() !== ""
+    ? record.model.trim()
+    : prepaidCodeAutoDefaults.model;
+  const tokens = Number.isSafeInteger(record.tokens)
+    ? (record.tokens as number)
+    : prepaidCodeAutoDefaults.tokens;
+  return { model, tokens };
+}
+
 export const prepaidStatusUrl = "https://mapleai.shop/v1/prepaid/status";
 export const prepaidApiBaseUrl = "https://mapleai.shop/v1";
 
