@@ -16,6 +16,9 @@ import {
 } from "./pricing";
 import { marketplaceError } from "./response";
 import { resolveAllowedModels } from "./allCombos";
+
+const PREPAID_STATUS_URL = "https://mapleai.shop/v1/prepaid/status";
+const PREPAID_MODELS_URL = "https://mapleai.shop/v1/models";
 import { checkKillSwitch } from "@/server/killSwitch/manager";
 
 const injectionGuard = createInjectionGuard();
@@ -86,8 +89,15 @@ export async function handlePrepaidChatCompletion(
   }
 
   const publicModel = body.model.trim();
-  if (publicModel === "jev-latest" || publicModel.startsWith("gpt-image-") || publicModel === "grok-imagine-image") {
-    return marketplaceError(403, "Prepaid keys are not available for this model", "forbidden");
+  if (
+    publicModel === "jev-latest" ||
+    publicModel.startsWith("gpt-image-") ||
+    publicModel === "grok-imagine-image"
+  ) {
+    return marketplaceError(403, "Prepaid keys are not available for this model", "forbidden", {
+      hint: "This model is sold per request via x402 on sol/base/polygon/arc.mapleai.shop; prepaid keys cover GPT combo models only.",
+      statusUrl: PREPAID_STATUS_URL,
+    });
   }
 
   // Kill switch: global is already checked in the route layer; enforce the
@@ -112,7 +122,12 @@ export async function handlePrepaidChatCompletion(
       ? (publicModel.split("/").pop() as string)
       : publicModel;
     if (!allowedModels.includes(baseModel) && !allowedModels.includes(publicModel)) {
-      return marketplaceError(403, "Buyer key is not allowed to use this model", "forbidden");
+      return marketplaceError(403, "Buyer key is not allowed to use this model", "forbidden", {
+        allowedModels,
+        hint: `Retry with one of allowedModels. Check budget and restrictions: GET ${PREPAID_STATUS_URL}.`,
+        statusUrl: PREPAID_STATUS_URL,
+        modelsUrl: PREPAID_MODELS_URL,
+      });
     }
   }
 
@@ -121,7 +136,12 @@ export async function handlePrepaidChatCompletion(
   const combo = await getComboByName(publicModel);
   const isProviderModel = publicModel.includes("/");
   if (!combo && !isProviderModel) {
-    return marketplaceError(404, "Model not available", "not_found");
+    return marketplaceError(404, "Model not available", "not_found", {
+      allowedModels,
+      hint: `No combo is registered under this name. Models this key can use: GET ${PREPAID_MODELS_URL}; key state: GET ${PREPAID_STATUS_URL}.`,
+      statusUrl: PREPAID_STATUS_URL,
+      modelsUrl: PREPAID_MODELS_URL,
+    });
   }
 
   const promptEstimate = estimatePromptTokens(body);

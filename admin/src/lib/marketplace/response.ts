@@ -11,12 +11,18 @@ export function marketplaceJson(data: unknown, init?: ResponseInit): Response {
   });
 }
 
-export function marketplaceError(status: number, message: string, code = "marketplace_error") {
+export function marketplaceError(
+  status: number,
+  message: string,
+  code = "marketplace_error",
+  details?: Record<string, unknown>
+) {
   return marketplaceJson(
     {
       error: {
         message,
         type: code,
+        ...(details ? { details } : {}),
       },
     },
     { status }

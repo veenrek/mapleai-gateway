@@ -37,6 +37,8 @@ import {
   prepaidCodeModels,
   prepaidCodeOutputExample,
   prepaidCodesEnabled,
+  prepaidApiBaseUrl,
+  prepaidModelOffers,
   prepaidStatusUrl,
   quotePrepaidCode,
   validatePrepaidCodePurchase,
@@ -852,6 +854,7 @@ app.get("/v1/models", (req: Request, res: Response) => {
 
 app.get("/.well-known/x402", (req: Request, res: Response) => {
   const models = catalog();
+  const origin = originOf(req);
   const resource = (method: string, path: string, extra: Record<string, unknown>) => ({
     method,
     path,
@@ -870,11 +873,13 @@ app.get("/.well-known/x402", (req: Request, res: Response) => {
     payTo: config.payTo,
     facilitator: config.facilitatorMode === "cdp" ? CDP_FACILITATOR_URL : config.facilitatorUrl,
     contact: config.contactEmail,
+    serviceEndpoints: `${origin}/service-endpoints.json`,
     minimumChargeUsd: config.minChargeUsd,
     resources: [
       ...(nftEnabled ? Object.keys(nftNetworks).map((network) => ({ method: "GET", path: "/api/v1/" + network + "/nft/getNFTMetadata", description: nftDescription, price: nftPrice, pricedBy: "per request", exampleQuery: { contractAddress: nftExampleAddress } })) : []),
       resource("POST", "/v1/chat/completions", {}),
       resource("POST", "/api/v1/chat/completions", {}),
+
       {
         method: "POST",
         path: "/api/v1/responses",
@@ -928,6 +933,158 @@ app.get("/.well-known/x402", (req: Request, res: Response) => {
       maxOutput: m.maxOutput,
       pricing: { input: m.pricing.input, output: m.pricing.output, unit: "USD per 1M tokens" },
     })),
+  });
+});
+
+/**
+ * One-shot machine-readable index of everything this instance serves: routes,
+ * access mode (x402 / free / prepaid bearer) and live per-unit pricing, so a
+ * discovery agent can catalog the whole service from a single document.
+ */
+app.get("/service-endpoints.json", (req: Request, res: Response) => {
+  const models = catalog();
+  const origin = originOf(req);
+  const facilitator = config.facilitatorMode === "cdp" ? CDP_FACILITATOR_URL : config.facilitatorUrl;
+  const chatPricing = models.map((m) => ({
+    model: m.id,
+    inputUsdPerMillion: m.pricing.input,
+    outputUsdPerMillion: m.pricing.output,
+  }));
+
+  const endpoints: Record<string, unknown>[] = [
+    {
+      method: "POST",
+      path: "/v1/chat/completions",
+      access: "x402",
+      description: "OpenAI-compatible chat completions",
+      pricing: { kind: "dynamic", formula: "input_tokens * input_rate + max_tokens * output_rate + overhead", models: chatPricing, overheadUsd: config.minChargeUsd },
+      aliases: ["/api/v1/chat/completions"],
+      example: { model: models[0]?.id, messages: [{ role: "user", content: "Hello" }] },
+    },
+    {
+      method: "POST",
+      path: "/api/v1/responses",
+      access: "x402",
+      description: "OpenAI-compatible Responses API (alpha)",
+      pricing: { kind: "dynamic", formula: "input_tokens * input_rate + max_output_tokens * output_rate + overhead", models: chatPricing, overheadUsd: config.minChargeUsd },
+      aliases: ["/v1/responses"],
+      example: { model: models[0]?.id, input: "Hello" },
+    },
+    { method: "GET", path: "/v1/models", access: "free", description: "Model catalog with pricing and context windows" },
+    { method: "GET", path: "/health", access: "free", description: "Service liveness and configuration summary" },
+  ];
+
+  if (embeddingsEnabled) {
+    endpoints.push({
+      method: "POST",
+      path: "/v1/embeddings",
+      access: "free",
+      description: "Free NVIDIA embeddings (2048-dim vectors)",
+      pricing: { kind: "free", usd: 0 },
+      example: { input: "Hello", input_type: "query", encoding_format: "float" },
+    });
+  }
+
+  if (imagesEnabled) {
+    const imagePricing = Object.entries(imageRates).flatMap(([model, sizes]) =>
+      Object.entries(sizes).map(([size, usd]) => ({ model, size, usdPerImage: usd })),
+    );
+    endpoints.push(
+      {
+        method: "POST",
+        path: "/api/v1/images/generations",
+        access: "x402",
+        description: "Image generation, n 1-4, price per image by model and size",
+        pricing: { kind: "per_image", models: imagePricing, overheadUsd: config.minChargeUsd },
+        example: imageExample,
+      },
+      {
+        method: "POST",
+        path: "/api/v1/images/image2image",
+        access: "x402",
+        description: "Image editing from a PNG, JPEG or WebP base64 data URI (max 10 MB)",
+        pricing: { kind: "per_image", models: imagePricing, overheadUsd: config.minChargeUsd },
+        example: imageEditExample,
+      },
+    );
+  }
+
+  if (jevEnabled) {
+    endpoints.push({
+      method: "POST",
+      path: "/jev",
+      access: "x402",
+      description: "Jev structured decisions (SystemOne: state + named questions)",
+      pricing: { kind: "per_million_input_tokens", usd: jevPricePerMillion, overheadUsd: config.minChargeUsd },
+      example: jevExample,
+    });
+  }
+
+  if (nftEnabled) {
+    endpoints.push({
+      method: "GET",
+      path: "/api/v1/{chainNetwork}/nft/getNFTMetadata",
+      access: "x402",
+      description: "On-chain NFT contract metadata",
+      pricing: { kind: "per_request", usd: 0.002 },
+      networks: Object.keys(nftNetworks),
+      exampleQuery: { contractAddress: nftExampleAddress },
+    });
+  }
+
+  if (prepaidCodesEnabled) {
+    endpoints.push({
+      method: "POST",
+      path: "/prepaid/codes",
+      access: "x402",
+      description: "Buy a prepaid API key for one GPT model; budget 100000-1000000 tokens in 100000 steps",
+      pricing: { kind: "pack", models: prepaidModelOffers(), overheadUsd: config.minChargeUsd },
+      example: prepaidCodeExample,
+      outputExample: prepaidCodeOutputExample,
+    });
+    endpoints.push({
+      method: "GET",
+      url: prepaidStatusUrl,
+      access: "prepaid_bearer",
+      description: "Check a prepaid key: valid, reason, tokens total/used/reserved/remaining",
+      pricing: { kind: "free", usd: 0 },
+      auth: "Authorization: Bearer oms_buy_...",
+    });
+    endpoints.push({
+      method: "POST",
+      url: `${prepaidApiBaseUrl}/chat/completions`,
+      access: "prepaid_bearer",
+      description: "OpenAI-compatible chat with a prepaid key; usage depletes the token budget",
+      pricing: { kind: "prepaid_budget" },
+      auth: "Authorization: Bearer oms_buy_...",
+    });
+  }
+
+  res.json({
+    object: "service_endpoints",
+    version: 1,
+    service: config.serviceName,
+    origin,
+    updated: new Date().toISOString(),
+    network: config.network,
+    networkName: chain.networkName,
+    payment: {
+      protocol: "x402",
+      asset: chain.asset,
+      assetAddress: chain.assetAddress,
+      payTo: config.payTo,
+      facilitator,
+      minimumChargeUsd: config.minChargeUsd,
+    },
+    endpoints,
+    discovery: {
+      openapi: `${origin}/openapi.json`,
+      x402Manifest: `${origin}/.well-known/x402`,
+      llms: `${origin}/llms.txt`,
+      agents: `${origin}/AI-AGENTS.md`,
+      modelCatalog: `${origin}/v1/models`,
+      status: prepaidCodesEnabled ? prepaidStatusUrl : undefined,
+    },
   });
 });
 
@@ -1560,6 +1717,7 @@ app.get("/llms.txt", (req: Request, res: Response) => {
       "",
       "## Discovery",
       "",
+      `${origin}/service-endpoints.json - one-shot machine-readable index of routes, access modes and pricing`,
       `${origin}/.well-known/x402 - x402 discovery document`,
       `${origin}/openapi.json - OpenAPI 3.1 specification`,
       `${origin}/AI-AGENTS.md - integration guide for agents`,

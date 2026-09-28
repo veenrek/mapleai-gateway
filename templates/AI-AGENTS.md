@@ -64,6 +64,11 @@ curl {{ORIGIN}}/api/v1/responses \
 
 Developer guide with network URLs, model prices and request examples: {{ORIGIN}}/developers
 
+### Service Index
+`GET {{ORIGIN}}/service-endpoints.json`
+One-shot machine-readable index: every route with its access mode
+(x402 / free / prepaid bearer), live per-unit pricing and request examples.
+
 ### x402 Resource Manifest
 `GET {{ORIGIN}}/.well-known/x402`
 Machine-readable x402 resource manifest for wallet/agent discovery.

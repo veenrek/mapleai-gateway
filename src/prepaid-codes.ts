@@ -43,6 +43,29 @@ export const prepaidCodeExample = {
 };
 
 export const prepaidStatusUrl = "https://mapleai.shop/v1/prepaid/status";
+export const prepaidApiBaseUrl = "https://mapleai.shop/v1";
+
+export interface PrepaidModelOffer {
+  model: string;
+  inputUsdPerMillion: number;
+  packPricesUsd: { tokens: number; usd: number }[];
+}
+
+/** Sellable models with their pack prices, derived from the live price table. */
+export function prepaidModelOffers(): PrepaidModelOffer[] {
+  return prepaidCodeModels.map((id) => {
+    const pricing = pricingForModel(id);
+    const input = pricing && isTokenPriced(pricing) ? pricing.input : 0;
+    return {
+      model: id,
+      inputUsdPerMillion: input,
+      packPricesUsd: [100_000, 1_000_000].map((tokens) => ({
+        tokens,
+        usd: (tokens * input) / 1_000_000,
+      })),
+    };
+  });
+}
 
 export const prepaidCodeOutputExample = {
   object: "prepaid_code",
@@ -72,7 +95,11 @@ export function validatePrepaidCodePurchase(
         type: "invalid_request",
         param: "model",
         code: "invalid_model",
-        details: { schema: prepaidCodeInputSchema },
+        details: {
+          schema: prepaidCodeInputSchema,
+          availableModels: prepaidModelOffers(),
+          hint: `Retry with one of the availableModels above. Prepaid keys are checked on ${prepaidStatusUrl} (free).`,
+        },
       },
     });
     return;
@@ -89,7 +116,11 @@ export function validatePrepaidCodePurchase(
         type: "invalid_request",
         param: "tokens",
         code: "invalid_token_amount",
-        details: { schema: prepaidCodeInputSchema },
+        details: {
+          schema: prepaidCodeInputSchema,
+          allowedSteps: { min: 100_000, max: 1_000_000, step: 100_000 },
+          hint: "Retry with a tokens value in 100000 steps, e.g. 200000 or 500000.",
+        },
       },
     });
     return;
