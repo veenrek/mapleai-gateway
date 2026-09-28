@@ -1,0 +1,312 @@
+#!/usr/bin/env node
+// MapleAI agent sentinel: walks the agent funnel hourly, so a broken first
+// contact (dead model, wrong 402, 503 after deploy) is caught in minutes
+// instead of being reported by a lost customer.
+//
+// Free checks run against every mirror every invocation; the paid tap loop
+// (≈$0.016/day) runs at most once per day against solana + base wallets.
+//
+// Alerts go to TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID or ALERT_WEBHOOK_URL when
+// configured; everything is also logged to stdout for cron.
+//
+// Usage:
+//   SBD_STATE=... --probe-only   skip the paid loop
+//   --domains sol,base            limit mirrors (default all)
+
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import path from "node:path";
+import { x402Client } from "@x402/core/client";
+import { registerExactEvmScheme } from "@x402/evm/exact/client";
+import { registerExactSvmScheme } from "@x402/svm/exact/client";
+import { createKeyPairSignerFromBytes } from "@solana/kit";
+import { base58 } from "@scure/base";
+import { privateKeyToAccount } from "viem/accounts";
+
+const DOMAINS = {
+  solana: {
+    origin: "https://sol.mapleai.shop",
+    flag: "sol",
+    svm: true,
+    network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+    asset: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    payTo: "9DbpH2Mf9D26ak4bASsv6KA4Ra4V571oLpiVdZjAjcU8",
+    walletFile: ".secrets/solana-test-wallet.json",
+  },
+  base: {
+    origin: "https://base.mapleai.shop",
+    flag: "base",
+    network: "eip155:8453",
+    asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    payTo: "0x63db6eaf635a31bbc6714fe37bdc85243864f611",
+    walletFile: ".secrets/base-buyer-wallet.json",
+  },
+  polygon: {
+    origin: "https://polygon.mapleai.shop",
+    flag: "polygon",
+    network: "eip155:137",
+    asset: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+    payTo: "0x63db6eaf635a31bbc6714fe37bdc85243864f611",
+  },
+  arc: {
+    origin: "https://arc.mapleai.shop",
+    flag: "arc",
+    network: "eip155:5042",
+    asset: "0x3600000000000000000000000000000000000000",
+    payTo: "0x63db6eaf635a31bbc6714fe37bdc85243864f611",
+  },
+};
+
+const PROBE_ONLY = process.argv.includes("--probe-only");
+const domainsArg = process.argv.find((arg) => arg.startsWith("--domains="));
+const activeDomains = domainsArg
+  ? domainsArg.split("=")[1].split(",").map((d) => d.trim())
+  : Object.keys(DOMAINS);
+
+const failures = [];
+const notes = [];
+
+async function probe(name, run) {
+  try {
+    const detail = await run();
+    console.log(`ok   ${name}${detail ? " — " + detail : ""}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.log(`FAIL ${name} — ${message}`);
+    if (process.env.SENTINEL_DEBUG && error instanceof Error) console.log(error.stack);
+    failures.push(`[${name}] ${message}`);
+  }
+}
+
+function failureExpect(message) {
+  return new Error(message);
+}
+
+async function getJson(url, expect = {}) {
+  const res = await fetch(url, { signal: AbortSignal.timeout(expect.timeout ?? 20_000) });
+  if (res.status !== 200) throw failureExpect(`expected 200, got ${res.status}`);
+  const text = await res.text();
+  try { return JSON.parse(text); } catch { throw failureExpect("response is not JSON"); }
+}
+
+async function checkChallenge(url, domain, body, amountCapAtoms) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (res.status !== 402) throw failureExpect(`expected 402, got ${res.status}`);
+  const raw = res.headers.get("payment-required");
+  if (!raw) throw failureExpect("missing PAYMENT-REQUIRED header");
+  let challenge;
+  try { challenge = JSON.parse(Buffer.from(raw, "base64").toString("utf8")); }
+  catch { throw failureExpect("PAYMENT-REQUIRED is not base64 JSON"); }
+  if (challenge.x402Version !== 2) throw failureExpect("x402Version is not 2");
+  const accept = Array.isArray(challenge.accepts) ? challenge.accepts[0] : undefined;
+  if (!accept) throw failureExpect("empty accepts");
+  if (accept.scheme !== "exact") throw failureExpect(`scheme=${accept.scheme}`);
+  if (accept.network !== domain.network) throw failureExpect(`network=${accept.network}`);
+  const same = (a, b) => (domain.svm ? a === b : a?.toLowerCase() === b?.toLowerCase());
+  if (!same(accept.asset, domain.asset)) throw failureExpect(`asset=${accept.asset}`);
+  if (!same(accept.payTo, domain.payTo)) throw failureExpect(`payTo=${accept.payTo}`);
+  const amount = typeof accept.amount === "string" && /^\d+$/.test(accept.amount) ? BigInt(accept.amount) : 0n;
+  if (amount < 1n) throw failureExpect("amount is zero");
+  if (amount > amountCapAtoms) throw failureExpect(`amount ${accept.amount} exceeds cap ${amountCapAtoms}`);
+  return { challenge, amount };
+}
+
+async function decodeSettlement(res) {
+  const raw = res.headers.get("payment-response");
+  if (!raw) return undefined;
+  return JSON.parse(Buffer.from(raw, "base64").toString("utf8"));
+}
+
+function signAndRetry(challenge, requirement, domain, walletRoot) {
+  const walletFile = path.join(walletRoot, domain.walletFile);
+  const wallet = JSON.parse(readFileSync(walletFile, "utf8"));
+  return (async () => {
+    const client = new x402Client().setSpendControls({
+      allowedAssets: [{ network: domain.network, asset: domain.asset, maxAmountPerPayment: requirement.amount }],
+    });
+    if (domain.svm) {
+      const key = wallet.privateKeyBase58 ?? wallet.privateKey;
+      const signer = await createKeyPairSignerFromBytes(base58.decode(key));
+      registerExactSvmScheme(client, { signer, networks: [domain.network] });
+    } else {
+      const account = privateKeyToAccount(wallet.privateKey);
+      registerExactEvmScheme(client, { signer: account, networks: [domain.network] });
+    }
+    const payment = await client.createPaymentPayload(challenge);
+    delete payment.extensions?.quote;
+    return Buffer.from(JSON.stringify(payment)).toString("base64");
+  })();
+}
+
+async function paidTap(domain, walletRoot) {
+  const url = domain.origin + "/prepaid/codes/auto";
+  const { challenge, amount } = await checkChallenge(url, domain, {}, 20_000n);
+  const requirement = challenge.accepts[0];
+  if (Number(amount) !== 8_000) throw failureExpect(`tap amount changed: ${amount} atoms`);
+  const signatureHeader = await signAndRetry(challenge, requirement, domain, walletRoot);
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", "payment-signature": signatureHeader },
+    body: "{}",
+    signal: AbortSignal.timeout(120_000),
+  });
+  const settlement = await decodeSettlement(res);
+  const body = await res.json().catch(() => null);
+  if (res.status !== 201) throw failureExpect(`expected 201, got ${res.status}: ${JSON.stringify(body)?.slice(0, 120)}`);
+  if (settlement && settlement.success !== true) throw failureExpect("settlement failed");
+  if (!body?.code || !String(body.code).startsWith("oms_buy_")) throw failureExpect("no oms_buy_ code in tap response");
+  if (body.model !== "openai/gpt-6-luna") throw failureExpect(`tap model: ${body.model}`);
+  if (Number(body?.tokens?.total) !== 100_000) throw failureExpect("token budget mismatch");
+
+  const statusRes = await fetch(body.status_url ?? "https://mapleai.shop/v1/prepaid/status", {
+    headers: { authorization: "Bearer " + body.code },
+    signal: AbortSignal.timeout(20_000),
+  });
+  const status = await statusRes.json().catch(() => null);
+  if (statusRes.status !== 200 || status?.valid !== true) throw failureExpect("issued key failed status check");
+  if (Number(status?.tokens?.remaining) !== 100_000) throw failureExpect("remaining mismatch");
+  return `settled tx=${settlement?.transaction ?? "?"} key+status ok`;
+}
+
+function stateFile() {
+  return process.env.SENTINEL_STATE_FILE ?? "sentinel-state.json";
+}
+function loadState() {
+  try { return JSON.parse(readFileSync(stateFile(), "utf8")); } catch { return {}; }
+}
+function saveState(state) {
+  try {
+    mkdirSync(path.dirname(stateFile()), { recursive: true });
+  } catch { /* root of cwd */ }
+  writeFileSync(stateFile(), JSON.stringify(state));
+}
+
+async function alert(message) {
+  const text = "MapleAI agent sentinel\n" + message;
+  const hook = process.env.ALERT_WEBHOOK_URL;
+  if (hook) {
+    try {
+      await fetch(hook, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text, failures: failures.length ? failures : undefined }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      notes.push("alert sent to webhook");
+    } catch (error) {
+      notes.push("webhook delivery failed: " + (error instanceof Error ? error.message : error));
+    }
+  }
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (token && chatId) {
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: true }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!res.ok) throw failureExpect("telegram HTTP " + res.status);
+      notes.push("alert sent to telegram");
+    } catch (error) {
+      notes.push("telegram delivery failed: " + (error instanceof Error ? error.message : error));
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+
+for (const flag of activeDomains) {
+  const domain = DOMAINS[flag];
+  if (!domain) { failures.push(`unknown domain ${flag}`); continue; }
+
+  await probe(`${flag} models`, async () => {
+    const catalog = await getJson(domain.origin + "/v1/models");
+    const gpt = (catalog.data ?? []).filter((m) => m.id.startsWith("openai/"));
+    if (gpt.length !== 4) throw failureExpect(`expected 4 GPT models, got ${gpt.length}`);
+    for (const m of gpt) {
+      if (!(m.pricing?.input > 0) || !(m.pricing?.output > 0)) throw failureExpect(`bad pricing on ${m.id}`);
+    }
+    return `${gpt.length} models, cheapest in $${Math.min(...gpt.map((m) => m.pricing.input))}`;
+  });
+
+  await probe(`${flag} openapi`, async () => {
+    const spec = await getJson(domain.origin + "/openapi.json");
+    const paths = Object.keys(spec.paths ?? {});
+    if (paths.length < 10) throw failureExpect(`only ${paths.length} paths`);
+    const embed = spec.paths["/v1/embeddings"]?.post?.["x-worked-example"];
+    if (!embed?.curl) throw failureExpect("missing worked example for embeddings");
+    const hasProof = spec["x-agentcash-provenance"]?.ownershipProofs?.length > 0 || spec["x-discovery"]?.ownershipProofs?.length > 0;
+    if (!hasProof) throw failureExpect("ownership proofs missing");
+    return `${paths.length} paths`;
+  });
+
+  await probe(`${flag} agent-card`, async () => {
+    const card = await getJson(domain.origin + "/.well-known/agent-card.json");
+    if (!Array.isArray(card.skills) || card.skills.length < 6) throw failureExpect(`skills=${card.skills?.length}`);
+    return `${card.skills.length} skills`;
+  });
+
+  await probe(`${flag} embeddings`, async () => {
+    const res = await fetch(domain.origin + "/v1/embeddings", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ input: "sentinel heartbeat", input_type: "query" }),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (res.status !== 200) throw failureExpect(`expected 200, got ${res.status}`);
+    const body = await res.json();
+    const vector = body?.data?.[0]?.embedding;
+    if (!Array.isArray(vector) || vector.length !== 2048) throw failureExpect("no 2048-dim vector");
+    if (typeof body.hint_next !== "string" || !body.hint_next.includes("/v1/chat/completions")) {
+      throw failureExpect("hint_next marker missing");
+    }
+    return `dim=${vector.length}`;
+  });
+
+  await probe(`${flag} chat challenge`, async () => {
+    const { amount } = await checkChallenge(domain.origin + "/v1/chat/completions", domain,
+      { model: "openai/gpt-6-luna", messages: [{ role: "user", content: "OK?" }], max_tokens: 8 }, 5_000n);
+    return `amount ${amount} atoms`;
+  });
+
+  await probe(`${flag} jev challenge`, async () => {
+    await checkChallenge(domain.origin + "/jev", domain,
+      { model: "jev-latest", state: "Sentinel check state.", questions: { billing: { type: "noul", instructions: "Is this about billing?" } } }, 10_000n);
+    return "shape ok";
+  });
+
+  await probe(`${flag} tap challenge`, async () => {
+    await checkChallenge(domain.origin + "/prepaid/codes/auto", domain, {}, 20_000n);
+    return "shape ok";
+  });
+}
+
+if (!PROBE_ONLY) {
+  const state = loadState();
+  const today = new Date().toISOString().slice(0, 10);
+  if (state.lastPaidRun !== today) {
+    const walletRoot = process.env.SENTINEL_WALLET_ROOT ?? ".";
+    for (const flag of ["solana", "base"]) {
+      if (!activeDomains.includes(flag)) continue;
+      await probe(`${flag} paid tap`, () => paidTap(DOMAINS[flag], walletRoot));
+    }
+    state.lastPaidRun = today;
+    saveState(state);
+  } else {
+    console.log("info paid tap already ran today");
+  }
+}
+
+const summary = `${activeDomains.length} domains scanned${PROBE_ONLY ? " (probe-only)" : ""}.`;
+if (failures.length > 0) {
+  await alert(`${failures.length} check(s) failing. ${summary}\n` + failures.slice(0, 8).join("\n"));
+}
+for (const note of notes) console.log("info", note);
+console.log(failures.length ? `FAILURES: ${failures.length}` : "ALL CHECKS PASSED");
+process.exit(failures.length ? 1 : 0);
