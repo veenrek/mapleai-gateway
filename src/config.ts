@@ -103,6 +103,17 @@ export const config = {
     .map((p) => p.trim())
     .filter((p) => p.length > 0),
 
+  /**
+   * Models temporarily pulled from sale (outages at the upstream, e.g. the
+   * gpt-6-luna channel blackout on 2026-09-29). They disappear from /v1/models
+   * and every generated document, and a request for one returns an explicit
+   * "temporarily unavailable" error after the paywall cancels the settlement.
+   */
+  disabledModels: (process.env.DISABLED_MODELS ?? "")
+    .split(",")
+    .map((m) => m.trim())
+    .filter((m) => m.length > 0),
+
   /** Brand shown in every public document and API response */
   serviceName: process.env.SERVICE_NAME ?? "MapleAI",
   /** Support contact published in openapi.json / llms.txt / landing page */

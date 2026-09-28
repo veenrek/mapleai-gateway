@@ -13,7 +13,7 @@ type DynamicPrice = (context: HTTPRequestContext) => string | Promise<string>;
 import { config } from "./config.js";
 import { catalog, compactTokens, maxContextWindow, minInputPrice, money } from "./catalog.js";
 import { chainInfo } from "./chain.js";
-import { canonicalModelId, pricingForModel, upstreamModelId } from "./models.js";
+import { canonicalModelId, isModelEnabled, listModels, pricingForModel, upstreamModelId } from "./models.js";
 import { estimateOutputTokens, quotePrice, quoteBreakdown } from "./pricing.js";
 import { paymentOverheadUsd } from "./gas.js";
 import { actualCostUsd, extractPayer, parseUsage, parseUsageFromSse, recordUsage } from "./ledger.js";
@@ -38,6 +38,7 @@ import {
   prepaidCodeExample,
   prepaidCodeInputSchema,
   prepaidCodeModels,
+  sellablePrepaidModels,
   prepaidCodeOutputExample,
   prepaidCodesEnabled,
   prepaidApiBaseUrl,
@@ -349,7 +350,7 @@ const PAID_ROUTES = {
       "One-shot prepaid tap: empty body buys a 100000-token openai/gpt-6-luna key",
       declareDiscoveryExtension({
         input: {},
-        inputSchema: { type: "object", properties: { model: { type: "string", enum: prepaidCodeModels }, tokens: { type: "integer" } } },
+        inputSchema: { type: "object", properties: { model: { type: "string", enum: sellablePrepaidModels }, tokens: { type: "integer" } } },
         bodyType: "json",
         output: { example: prepaidCodeOutputExample },
       }),
@@ -441,6 +442,17 @@ function resolveModel(req: Request, res: Response): string | undefined {
         message: `unknown model: ${requested ?? "(missing)"}. See GET /v1/models`,
         type: "invalid_request",
         code: "model_not_found",
+      },
+    });
+    return undefined;
+  }
+  if (!isModelEnabled(canonical)) {
+    res.status(503).json({
+      error: {
+        message: `${canonical} is temporarily unavailable at the upstream provider. Retry later or pick another model from GET /v1/models.`,
+        type: "upstream_error",
+        code: "model_unavailable",
+        details: { sellableModels: listModels().map((m) => m.id) },
       },
     });
     return undefined;
@@ -1684,7 +1696,7 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
             "x-worked-example": workedExample("POST", "/prepaid/codes", prepaidCodeExample, true),
             "x-pricing": {
               unit: "prepaid token pack",
-              models: Object.fromEntries(prepaidCodeModels.map((model) => [model, pricingForModel(model)])),
+              models: Object.fromEntries(sellablePrepaidModels.map((model) => [model, pricingForModel(model)])),
             },
             requestBody: {
               required: true,
@@ -1711,7 +1723,7 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
             "x-worked-example": workedExample("POST", "/prepaid/codes/auto", {}, true),
             requestBody: {
               required: false,
-              content: { "application/json": { schema: { type: "object", properties: { model: { type: "string", enum: prepaidCodeModels }, tokens: { type: "integer", minimum: 100_000, maximum: 1_000_000 } } }, example: {} } },
+              content: { "application/json": { schema: { type: "object", properties: { model: { type: "string", enum: sellablePrepaidModels }, tokens: { type: "integer", minimum: 100_000, maximum: 1_000_000 } } }, example: {} } },
             },
             responses: {
               "201": { description: "Prepaid bearer API key", content: { "application/json": { example: prepaidCodeOutputExample } } },
@@ -1999,8 +2011,9 @@ app.get("/llms.txt", (req: Request, res: Response) => {
 
 app.get("/health", (req: Request, res: Response) => {
   res.json({
-    status: "ok",
+    status: config.disabledModels.length > 0 ? "degraded" : "ok",
     service: config.serviceName,
+    degradedModels: config.disabledModels,
     network: config.network,
     networkName: chain.networkName,
     models: catalog().length,

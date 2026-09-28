@@ -142,25 +142,33 @@ function signAndRetry(challenge, requirement, domain, walletRoot) {
   })();
 }
 
-// Purchased pack model: rotates by day-of-year so all four sellable models
-// get priced and issued over time. SENTINEL_TAP_MODEL pins a single model.
-const TAP_MODELS = [
-  "openai/gpt-6-luna",
-  "openai/gpt-5.6-terra",
-  "openai/gpt-6-sol",
+// Sellable models are read from the live catalogs, so a model DISABLED_MODELS
+// pulls (like Luna during the upstream blackout) drops out of the probes and
+// returns by itself once the gateway re-enables it.
+const FALLBACK_MODELS = [
   "openai/gpt-5.6-sol",
+  "openai/gpt-5.6-terra",
+  "openai/gpt-6-luna",
+  "openai/gpt-6-sol",
 ];
-const dayOfYear = Math.floor((Date.now() - Date.UTC(2026, 0, 1)) / 86_400_000);
-const TAP_MODEL = process.env.SENTINEL_TAP_MODEL ?? TAP_MODELS[dayOfYear % TAP_MODELS.length];
 
-// Models the paid settle check exercises daily — a 403 upstream here is the
-// early warning we missed during the Luna channel outage.
-const PAID_CHAT_MODELS = [
-  "openai/gpt-5.6-sol",
-  "openai/gpt-5.6-terra",
-  "openai/gpt-6-luna",
-  "openai/gpt-6-sol",
-];
+async function sellableModels(domain) {
+  try {
+    const res = await fetch(domain.origin + "/v1/models", { signal: AbortSignal.timeout(20_000) });
+    if (!res.ok) throw failureExpect(`catalog HTTP ${res.status}`);
+    const catalog = await res.json();
+    const models = (catalog.data ?? []).map((m) => m.id).filter((id) => id.startsWith("openai/"));
+    return models.length > 0 ? models : FALLBACK_MODELS;
+  } catch {
+    notes.push(`${domain.flag} catalog read failed, falling back to the static model list`);
+    return FALLBACK_MODELS;
+  }
+}
+
+function tapModelForDay(models) {
+  const dayOfYear = Math.floor((Date.now() - Date.UTC(2026, 0, 1)) / 86_400_000);
+  return models[dayOfYear % models.length];
+}
 
 const USDC_DECIMALS = 6;
 const RPC = { solana: "https://api.mainnet-beta.solana.com", base: "https://mainnet.base.org" };
@@ -191,10 +199,10 @@ async function walletUsdc(domain, walletRoot) {
   return Number(BigInt(result ?? "0x0")) / 10 ** USDC_DECIMALS;
 }
 
-async function paidTap(domain, walletRoot) {
+async function paidTap(domain, walletRoot, tapModel) {
   const url = domain.origin + "/prepaid/codes/auto";
-  const purchase = JSON.stringify({ model: TAP_MODEL, tokens: 100_000 });
-  const { challenge, amount } = await checkChallenge(url, domain, { model: TAP_MODEL, tokens: 100_000 }, 300_000n);
+  const purchase = JSON.stringify({ model: tapModel, tokens: 100_000 });
+  const { challenge, amount } = await checkChallenge(url, domain, { model: tapModel, tokens: 100_000 }, 300_000n);
   const requirement = challenge.accepts[0];
   const signatureHeader = await signAndRetry(challenge, requirement, domain, walletRoot);
   const res = await fetch(url, {
@@ -208,7 +216,7 @@ async function paidTap(domain, walletRoot) {
   if (res.status !== 201) throw failureExpect(`expected 201, got ${res.status}: ${JSON.stringify(body)?.slice(0, 120)}`);
   if (settlement && settlement.success !== true) throw failureExpect("settlement failed");
   if (!body?.code || !String(body.code).startsWith("oms_buy_")) throw failureExpect("no oms_buy_ code in tap response");
-  if (body.model !== TAP_MODEL) throw failureExpect(`tap model: ${body.model}`);
+  if (body.model !== tapModel) throw failureExpect(`tap model: ${body.model}`);
   if (Number(body?.tokens?.total) !== 100_000) throw failureExpect("token budget mismatch");
 
   const statusRes = await fetch(body.status_url ?? "https://mapleai.shop/v1/prepaid/status", {
@@ -376,6 +384,11 @@ if (!PROBE_ONLY) {
         return `$${usdc.toFixed(4)}`;
       });
     }
+    const modelsByFlag = {};
+    for (const flag of ["solana", "base"]) {
+      if (!activeDomains.includes(flag)) continue;
+      modelsByFlag[flag] = await sellableModels(DOMAINS[flag]);
+    }
     for (const flag of ["solana", "base"]) {
       if (!activeDomains.includes(flag)) continue;
       const usdc = balances[flag];
@@ -383,17 +396,19 @@ if (!PROBE_ONLY) {
         await probe(`${flag} paid tap (rpc) balance`, () => { throw failureExpect("wallet balance unavailable"); });
         continue;
       }
-      const MIN_SETTLE_TOTAL = PAID_CHAT_MODELS.length * 0.0011;
-      if (usdc < MIN_SETTLE_TOTAL) {
-        notes.push(`${flag} wallet too low for settle checks ($${usdc.toFixed(4)} < $${MIN_SETTLE_TOTAL.toFixed(4)}) — skipped, refill needed`);
+      const models = modelsByFlag[flag] ?? FALLBACK_MODELS;
+      const settleCost = models.length * 0.0011;
+      if (usdc < settleCost) {
+        notes.push(`${flag} wallet too low for settle checks ($${usdc.toFixed(4)} < $${settleCost.toFixed(4)}) — skipped, refill needed`);
         continue;
       }
       if (usdc < 0.05) {
         notes.push(`${flag} wallet too low for the tap pack ($${usdc.toFixed(4)}) — tap skipped, refill needed`);
       } else {
-        await probe(`${flag} paid tap`, () => paidTap(DOMAINS[flag], walletRoot));
+        const tapModel = process.env.SENTINEL_TAP_MODEL ?? tapModelForDay(models);
+        await probe(`${flag} paid tap ${tapModel}`, () => paidTap(DOMAINS[flag], walletRoot, tapModel));
       }
-      for (const modelId of PAID_CHAT_MODELS) {
+      for (const modelId of models) {
         await probe(`${flag} paid settle ${modelId}`, () => paidChatSettle(DOMAINS[flag], modelId, walletRoot));
       }
     }

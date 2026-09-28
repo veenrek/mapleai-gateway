@@ -28,11 +28,20 @@ export function isTokenPriced(p: unknown): p is TokenPricing {
   );
 }
 
+/** True while a model stays sellable (see DISABLED_MODELS — upstream outage relief). */
+export function isModelEnabled(id: string | undefined): boolean {
+  if (!id) return false;
+  const canonical = canonicalModelId(id) ?? id;
+  return !config.disabledModels.includes(canonical);
+}
+
 export function listModels(): ModelEntry[] {
-  return Object.entries(config.modelPrices).map(([id, pricing]) => ({
-    id,
-    pricing: isTokenPriced(pricing) ? pricing : { per_request: pricing as string },
-  }));
+  return Object.entries(config.modelPrices)
+    .filter(([id]) => isModelEnabled(id))
+    .map(([id, pricing]) => ({
+      id,
+      pricing: isTokenPriced(pricing) ? pricing : { per_request: pricing as string },
+    }));
 }
 
 /**

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
 import { config } from "./config.js";
 import { paymentOverheadUsd } from "./gas.js";
-import { isTokenPriced, pricingForModel } from "./models.js";
+import { isModelEnabled, isTokenPriced, pricingForModel } from "./models.js";
 
 export const prepaidCodeModels = [
   "openai/gpt-5.6-sol",
@@ -10,6 +10,9 @@ export const prepaidCodeModels = [
   "openai/gpt-6-luna",
   "openai/gpt-6-sol",
 ] as const;
+
+/** Sellable right now: full prepaid list minus models pulled by DISABLED_MODELS. */
+export const sellablePrepaidModels = prepaidCodeModels.filter((m) => isModelEnabled(m));
 
 export const prepaidCodesEnabled = Boolean(config.prepaidIssuerToken);
 
@@ -28,23 +31,35 @@ if (prepaidCodesEnabled) {
   }
 }
 
+function cheapestSellableModel(): string {
+  const ranked = sellablePrepaidModels
+    .map((id) => {
+      const pricing = pricingForModel(id);
+      return { id, input: pricing && isTokenPriced(pricing) ? pricing.input : Number.MAX_SAFE_INTEGER };
+    })
+    .sort((a, b) => a.input - b.input);
+  return ranked[0]?.id ?? prepaidCodeModels[0];
+}
+
+const prepaidExampleModel = cheapestSellableModel();
+
 export const prepaidCodeInputSchema = {
   type: "object",
   required: ["model", "tokens"],
   properties: {
-    model: { type: "string", enum: prepaidCodeModels },
+    model: { type: "string", enum: sellablePrepaidModels },
     tokens: { type: "integer", minimum: 100_000, maximum: 1_000_000, multipleOf: 100_000 },
   },
 } as const;
 
 export const prepaidCodeExample = {
-  model: "openai/gpt-6-luna",
+  model: prepaidExampleModel,
   tokens: 100_000,
 };
 
-/** One-shot agent "tap": POST with an empty body buys the cheapest Luna pack. */
+/** One-shot agent "tap": POST with an empty body buys the cheapest pack that is on sale right now. */
 export const prepaidCodeAutoDefaults = {
-  model: "openai/gpt-6-luna",
+  model: prepaidExampleModel,
   tokens: 100_000,
 } as const;
 
@@ -72,7 +87,7 @@ export interface PrepaidModelOffer {
 
 /** Sellable models with their pack prices, derived from the live price table. */
 export function prepaidModelOffers(): PrepaidModelOffer[] {
-  return prepaidCodeModels.map((id) => {
+  return sellablePrepaidModels.map((id) => {
     const pricing = pricingForModel(id);
     const input = pricing && isTokenPriced(pricing) ? pricing.input : 0;
     return {
@@ -107,10 +122,12 @@ export function validatePrepaidCodePurchase(
     });
     return;
   }
-  if (!(prepaidCodeModels as readonly unknown[]).includes(body.model)) {
+  if (!(sellablePrepaidModels as readonly unknown[]).includes(body.model)) {
     res.status(400).json({
       error: {
-        message: "model must be one of the four supported GPT models.",
+        message: prepaidCodeModels.some((m) => m === body.model)
+          ? `${body.model} prepaid packs are paused while the upstream is unavailable. Pick another model.`
+          : "model must be one of the supported GPT models.",
         type: "invalid_request",
         param: "model",
         code: "invalid_model",
