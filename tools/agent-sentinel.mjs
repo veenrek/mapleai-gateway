@@ -142,16 +142,65 @@ function signAndRetry(challenge, requirement, domain, walletRoot) {
   })();
 }
 
+// Purchased pack model: rotates by day-of-year so all four sellable models
+// get priced and issued over time. SENTINEL_TAP_MODEL pins a single model.
+const TAP_MODELS = [
+  "openai/gpt-6-luna",
+  "openai/gpt-5.6-terra",
+  "openai/gpt-6-sol",
+  "openai/gpt-5.6-sol",
+];
+const dayOfYear = Math.floor((Date.now() - Date.UTC(2026, 0, 1)) / 86_400_000);
+const TAP_MODEL = process.env.SENTINEL_TAP_MODEL ?? TAP_MODELS[dayOfYear % TAP_MODELS.length];
+
+// Models the paid settle check exercises daily — a 403 upstream here is the
+// early warning we missed during the Luna channel outage.
+const PAID_CHAT_MODELS = [
+  "openai/gpt-5.6-sol",
+  "openai/gpt-5.6-terra",
+  "openai/gpt-6-luna",
+  "openai/gpt-6-sol",
+];
+
+const USDC_DECIMALS = 6;
+const RPC = { solana: "https://api.mainnet-beta.solana.com", base: "https://mainnet.base.org" };
+
+async function rpc(url, method, params) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!res.ok) throw failureExpect(`rpc ${method}: HTTP ${res.status}`);
+  const body = await res.json();
+  if (body.error) throw failureExpect(`rpc ${method}: ${body.error.message}`);
+  return body.result;
+}
+
+async function walletUsdc(domain, walletRoot) {
+  const wallet = JSON.parse(readFileSync(path.join(walletRoot, domain.walletFile), "utf8"));
+  const address = wallet.address;
+  if (domain.svm) {
+    const result = await rpc(RPC.solana, "getTokenAccountsByOwner", [address, { mint: domain.asset }, { encoding: "jsonParsed" }]);
+    const amount = result?.value?.[0]?.account?.data?.parsed?.info?.tokenAmount?.uiAmountString;
+    return Number(amount ?? 0);
+  }
+  const callData = "0x70a08231" + "0".repeat(24) + address.toLowerCase().replace(/^0x/, "");
+  const result = await rpc(RPC.base, "eth_call", [{ to: domain.asset, data: callData }, "latest"]);
+  return Number(BigInt(result ?? "0x0")) / 10 ** USDC_DECIMALS;
+}
+
 async function paidTap(domain, walletRoot) {
   const url = domain.origin + "/prepaid/codes/auto";
-  const { challenge, amount } = await checkChallenge(url, domain, {}, 20_000n);
+  const purchase = JSON.stringify({ model: TAP_MODEL, tokens: 100_000 });
+  const { challenge, amount } = await checkChallenge(url, domain, { model: TAP_MODEL, tokens: 100_000 }, 300_000n);
   const requirement = challenge.accepts[0];
-  if (Number(amount) !== 8_000) throw failureExpect(`tap amount changed: ${amount} atoms`);
   const signatureHeader = await signAndRetry(challenge, requirement, domain, walletRoot);
   const res = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json", "payment-signature": signatureHeader },
-    body: "{}",
+    body: purchase,
     signal: AbortSignal.timeout(120_000),
   });
   const settlement = await decodeSettlement(res);
@@ -159,7 +208,7 @@ async function paidTap(domain, walletRoot) {
   if (res.status !== 201) throw failureExpect(`expected 201, got ${res.status}: ${JSON.stringify(body)?.slice(0, 120)}`);
   if (settlement && settlement.success !== true) throw failureExpect("settlement failed");
   if (!body?.code || !String(body.code).startsWith("oms_buy_")) throw failureExpect("no oms_buy_ code in tap response");
-  if (body.model !== "openai/gpt-6-luna") throw failureExpect(`tap model: ${body.model}`);
+  if (body.model !== TAP_MODEL) throw failureExpect(`tap model: ${body.model}`);
   if (Number(body?.tokens?.total) !== 100_000) throw failureExpect("token budget mismatch");
 
   const statusRes = await fetch(body.status_url ?? "https://mapleai.shop/v1/prepaid/status", {
@@ -169,7 +218,30 @@ async function paidTap(domain, walletRoot) {
   const status = await statusRes.json().catch(() => null);
   if (statusRes.status !== 200 || status?.valid !== true) throw failureExpect("issued key failed status check");
   if (Number(status?.tokens?.remaining) !== 100_000) throw failureExpect("remaining mismatch");
-  return `settled tx=${settlement?.transaction ?? "?"} key+status ok`;
+  return `settled ${amount} atoms tx=${settlement?.transaction ?? "?"} key+status ok`;
+}
+
+async function paidChatSettle(domain, modelId, walletRoot) {
+  const url = domain.origin + "/v1/chat/completions";
+  const request = JSON.stringify({ model: modelId, messages: [{ role: "user", content: "Reply with OK" }], max_tokens: 4 });
+  const { challenge } = await checkChallenge(url, domain, { model: modelId, messages: [{ role: "user", content: "Reply with OK" }], max_tokens: 4 }, 5_000n);
+  const requirement = challenge.accepts[0];
+  const signatureHeader = await signAndRetry(challenge, requirement, domain, walletRoot);
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", "payment-signature": signatureHeader },
+    body: request,
+    signal: AbortSignal.timeout(120_000),
+  });
+  const settlement = await decodeSettlement(res);
+  const body = await res.text();
+  if (res.status !== 200) {
+    throw failureExpect(`${modelId}: HTTP ${res.status} ${body.slice(0, 120)} (settlement cancelled, no spend)`);
+  }
+  if (settlement && settlement.success !== true) throw failureExpect(`${modelId}: settlement failed`);
+  const content = JSON.parse(body)?.choices?.[0]?.message?.content ?? "";
+  if (typeof content !== "string" || content.length === 0) throw failureExpect(`${modelId}: empty content`);
+  return `${modelId} settled`;
 }
 
 function stateFile() {
@@ -292,9 +364,38 @@ if (!PROBE_ONLY) {
   const today = new Date().toISOString().slice(0, 10);
   if (state.lastPaidRun !== today) {
     const walletRoot = process.env.SENTINEL_WALLET_ROOT ?? ".";
+    // USDC on the test wallets: report balance, warn near exhaustion, and skip
+    // only what the balance cannot fund instead of spuriously FAILing the loop.
+    const balances = {};
     for (const flag of ["solana", "base"]) {
       if (!activeDomains.includes(flag)) continue;
-      await probe(`${flag} paid tap`, () => paidTap(DOMAINS[flag], walletRoot));
+      await probe(`${flag} wallet usdc`, async () => {
+        const usdc = await walletUsdc(DOMAINS[flag], walletRoot);
+        balances[flag] = usdc;
+        if (usdc < 0.05) notes.push(`${flag} test wallet below $0.05 USDC (${usdc.toFixed(6)}) — refill soon`);
+        return `$${usdc.toFixed(4)}`;
+      });
+    }
+    for (const flag of ["solana", "base"]) {
+      if (!activeDomains.includes(flag)) continue;
+      const usdc = balances[flag];
+      if (usdc === undefined) {
+        await probe(`${flag} paid tap (rpc) balance`, () => { throw failureExpect("wallet balance unavailable"); });
+        continue;
+      }
+      const MIN_SETTLE_TOTAL = PAID_CHAT_MODELS.length * 0.0011;
+      if (usdc < MIN_SETTLE_TOTAL) {
+        notes.push(`${flag} wallet too low for settle checks ($${usdc.toFixed(4)} < $${MIN_SETTLE_TOTAL.toFixed(4)}) — skipped, refill needed`);
+        continue;
+      }
+      if (usdc < 0.05) {
+        notes.push(`${flag} wallet too low for the tap pack ($${usdc.toFixed(4)}) — tap skipped, refill needed`);
+      } else {
+        await probe(`${flag} paid tap`, () => paidTap(DOMAINS[flag], walletRoot));
+      }
+      for (const modelId of PAID_CHAT_MODELS) {
+        await probe(`${flag} paid settle ${modelId}`, () => paidChatSettle(DOMAINS[flag], modelId, walletRoot));
+      }
     }
     state.lastPaidRun = today;
     saveState(state);
