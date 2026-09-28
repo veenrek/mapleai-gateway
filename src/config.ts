@@ -93,6 +93,16 @@ export const config = {
   /** JSONL file where per-request usage records are appended */
   ledgerFile: process.env.LEDGER_FILE ?? "./ledger.jsonl",
 
+  /**
+   * x402scan ownership proofs (comma-separated): signatures over the origin,
+   * produced by tools/sign-ownership-proof.mjs and published in openapi.json
+   * so the catalog can mark the listing ownership-verified.
+   */
+  ownershipProofs: (process.env.X402_OWNERSHIP_PROOFS ?? "")
+    .split(",")
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0),
+
   /** Brand shown in every public document and API response */
   serviceName: process.env.SERVICE_NAME ?? "MapleAI",
   /** Support contact published in openapi.json / llms.txt / landing page */

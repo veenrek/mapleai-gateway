@@ -1498,7 +1498,12 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
       "well-known": `${origin}/.well-known/x402`,
       llms: `${origin}/llms.txt`,
       agents: `${origin}/AI-AGENTS.md`,
+      ...(config.ownershipProofs.length > 0 ? { ownershipProofs: config.ownershipProofs } : {}),
     },
+    // x402scan ownership verification: signatures over the origin, signed by
+    // the payTo treasury wallet. The catalog marks accepts verified when a
+    // proof here matches payTo + origin.
+    ...(config.ownershipProofs.length > 0 ? { "x-agentcash-provenance": { ownershipProofs: config.ownershipProofs } } : {}),
     components: {
       securitySchemes: {
         x402: {
