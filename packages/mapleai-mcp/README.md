@@ -40,4 +40,15 @@ For Base and Arc, use `EVM_PRIVATE_KEY` and the corresponding `MCP_PAY_TO_BASE` 
 }
 ```
 
-Tools: `list_models` is free; `chat_completion` pays per request. Supported networks: Polygon, Base, Arc and Solana. Polygon is the default. Keep wallet keys in a secure local client configuration and enable tool approval for paid calls.
+Tools:
+
+| Tool | Cost | Purpose |
+| --- | --- | --- |
+| `list_models` | free | Model catalog and prices |
+| `embed_text` | free | 2048-dim embeddings (query/passage) |
+| `prepaid_status` | free | Prepaid key validity and remaining tokens |
+| `chat_completion` | x402 per call | GPT chat completions |
+| `jev_decide` | x402 per call | Jev structured decisions |
+| `buy_prepaid_tap` | ~$0.008 | Issue a prepaid API key for https://mapleai.shop/v1 |
+
+Supported networks: Polygon, Base, Arc and Solana. Polygon is the default. Keep wallet keys in a secure local client configuration and enable tool approval for paid calls.

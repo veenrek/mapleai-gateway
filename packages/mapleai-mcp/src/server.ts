@@ -19,6 +19,8 @@ export const networks = {
 } as const;
 export type Network = keyof typeof networks;
 
+const PREPAID_API_BASE = 'https://mapleai.shop/v1';
+
 export function limit(): bigint {
   const raw = process.env.MCP_MAX_PAYMENT_USDC ?? '0.10';
   if (!/^\d+(\.\d{1,6})?$/.test(raw)) throw new Error('Invalid MCP_MAX_PAYMENT_USDC');
@@ -56,9 +58,9 @@ function header(value: string | null, name: string): any {
   if (!value) throw new Error('Missing ' + name + ' header');
   return JSON.parse(Buffer.from(value, 'base64').toString('utf8'));
 }
-export async function paidChat(name: Network, body: string) {
+export async function paidCall(name: Network, path: string, body: string) {
   const target = networks[name];
-  const url = target.origin + '/v1/chat/completions';
+  const url = target.origin + path;
   const payTo = recipient(name);
   const cap = limit();
   const headers = { 'content-type': 'application/json' };
@@ -92,10 +94,14 @@ export async function paidChat(name: Network, body: string) {
     network: target.id, amount_usdc: Number(requirement.amount) / 1_000_000, transaction: settlement?.transaction ?? null,
   } };
 }
+export async function paidChat(name: Network, body: string) {
+  return paidCall(name, '/v1/chat/completions', body);
+}
 
 export function createServer() {
-const server = new McpServer({ name: 'mapleai', version: '0.1.0' });
+const server = new McpServer({ name: 'mapleai', version: '0.2.0' });
 const networkSchema = z.enum(['base', 'polygon', 'arc', 'solana']).default('polygon');
+
 server.registerTool('list_models', {
   description: 'List MapleAI models and prices on a supported network. Free call.',
   inputSchema: { network: networkSchema },
@@ -106,6 +112,29 @@ server.registerTool('list_models', {
     return { content: [{ type: 'text', text: await response.text() }] };
   } catch (error) { return { isError: true, content: [{ type: 'text', text: String(error) }] }; }
 });
+
+server.registerTool('embed_text', {
+  description:
+    'Free 2048-dim embeddings via NVIDIA nemotron-3-embed-1b. No payment. ' +
+    'Send one string or up to 4 strings; use input_type "query" for questions and "passage" for documents.',
+  inputSchema: {
+    input: z.union([z.string().min(1), z.array(z.string().min(1)).min(1).max(4)]),
+    input_type: z.enum(['query', 'passage']).default('query'),
+    network: networkSchema,
+  },
+}, async ({ input, input_type, network }) => {
+  try {
+    const response = await fetch(networks[network].origin + '/v1/embeddings', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ input, input_type }),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!response.ok) throw new Error('Embeddings endpoint returned HTTP ' + response.status + ': ' + (await response.text()).slice(0, 300));
+    return { content: [{ type: 'text', text: await response.text() }] };
+  } catch (error) { return { isError: true, content: [{ type: 'text', text: String(error) }] }; }
+});
+
 server.registerTool('chat_completion', {
   description: 'Call a MapleAI model with local x402 USDC payment. Maximum spend per call is MCP_MAX_PAYMENT_USDC (default 0.10).',
   inputSchema: {
@@ -118,6 +147,64 @@ server.registerTool('chat_completion', {
   try {
     const result = await paidChat(network, JSON.stringify({ model, messages, max_tokens }));
     return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+  } catch (error) { return { isError: true, content: [{ type: 'text', text: String(error) }] }; }
+});
+
+server.registerTool('jev_decide', {
+  description:
+    'Paid Jev structured decision (jev-latest): evaluate named questions against a state. ' +
+    'About $0.001 per short call via x402 USDC. Each question needs type (noul, choice or score) and instructions.',
+  inputSchema: {
+    state: z.string().min(1),
+    questions: z.record(z.string(), z.object({
+      type: z.enum(['noul', 'choice', 'score']),
+      instructions: z.string().min(1),
+    })).refine((questions) => Object.keys(questions).length >= 1, { message: 'at least one named question is required' }),
+    network: networkSchema,
+  },
+}, async ({ state, questions, network }) => {
+  try {
+    const result = await paidCall(network, '/jev', JSON.stringify({ model: 'jev-latest', state, questions }));
+    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+  } catch (error) { return { isError: true, content: [{ type: 'text', text: String(error) }] }; }
+});
+
+server.registerTool('buy_prepaid_tap', {
+  description:
+    'Paid one-shot: buys a prepaid MapleAI API key (default 100000 tokens of openai/gpt-6-luna) with local x402 USDC. ' +
+    'An empty purchase costs about $0.008. The key works at https://mapleai.shop/v1 as an OpenAI-compatible Bearer credential. ' +
+    'Store the returned code — it is the only credential.',
+  inputSchema: {
+    network: networkSchema,
+    model: z.string().optional(),
+    tokens: z.number().int().min(100_000).max(1_000_000).optional(),
+  },
+}, async ({ network, model, tokens }) => {
+  try {
+    const body: Record<string, unknown> = {};
+    if (model !== undefined) body.model = model;
+    if (tokens !== undefined) body.tokens = tokens;
+    const result = await paidCall(network, '/prepaid/codes/auto', JSON.stringify(body));
+    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+  } catch (error) { return { isError: true, content: [{ type: 'text', text: String(error) }] }; }
+});
+
+server.registerTool('prepaid_status', {
+  description:
+    'Free: check a prepaid MapleAI key (valid flag, reason, tokens total/used/reserved/remaining). ' +
+    'Send the oms_buy_ key bought via buy_prepaid_tap or the website.',
+  inputSchema: {
+    code: z.string().min(10),
+  },
+}, async ({ code }) => {
+  try {
+    const response = await fetch(PREPAID_API_BASE + '/prepaid/status', {
+      headers: { authorization: 'Bearer ' + code },
+      signal: AbortSignal.timeout(15_000),
+    });
+    const text = await response.text();
+    if (response.status !== 200) throw new Error('Status endpoint returned HTTP ' + response.status + ': ' + text.slice(0, 200));
+    return { content: [{ type: 'text', text }] };
   } catch (error) { return { isError: true, content: [{ type: 'text', text: String(error) }] }; }
 });
 

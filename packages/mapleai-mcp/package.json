@@ -1,18 +1,25 @@
 {
   "name": "mapleai-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Local MCP tools for MapleAI models with x402 USDC payments",
   "type": "module",
   "bin": {
     "mapleai-mcp": "dist/server.js",
     "mapleai-quickstart": "dist/quickstart.js"
   },
-  "files": ["dist", "README.md"],
-  "engines": { "node": ">=20" },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prepack": "npm run build",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node smoke-test.mjs",
+    "prepublishOnly": "npm run typecheck && npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.1",

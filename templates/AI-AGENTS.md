@@ -73,6 +73,11 @@ One-shot machine-readable index: every route with its access mode
 `GET {{ORIGIN}}/.well-known/x402`
 Machine-readable x402 resource manifest for wallet/agent discovery.
 
+### A2A Agent Card
+`GET {{ORIGIN}}/.well-known/agent-card.json`
+A2A-protocol agent card: skills, x402 security scheme and the OpenAI-compatible
+HTTP interface; use it for agent-to-agent service discovery.
+
 ### OpenAPI Specification
 `GET {{ORIGIN}}/openapi.json`
 Full API specification in OpenAPI 3.1 format, including per-model pricing.

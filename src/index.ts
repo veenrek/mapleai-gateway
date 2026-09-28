@@ -997,6 +997,135 @@ app.get("/.well-known/x402", (req: Request, res: Response) => {
 });
 
 /**
+ * A2A agent card: enumerates skills for agent-to-agent discovery. The service
+ * itself speaks OpenAI-compatible HTTP paid with x402 — no A2A JSON-RPC task
+ * transport is claimed, skills point at HTTP additionalInterfaces instead.
+ */
+app.get("/.well-known/agent-card.json", (req: Request, res: Response) => {
+  const models = catalog();
+  const origin = originOf(req);
+  const chain = chainInfo(config.network);
+  const skill = (id: string, name: string, description: string, tags: string[], example: string) => ({
+    id,
+    name,
+    description,
+    tags,
+    examples: [example],
+    inputModes: ["application/json"],
+    outputModes: ["application/json"],
+  });
+  const skills: Record<string, unknown>[] = [
+    skill(
+      "chat-completion",
+      "GPT chat completions",
+      `OpenAI-compatible chat completions with ${models.length} GPT models, priced per token. Exact quote in the 402 challenge.`,
+      ["chat", "llm"],
+      `POST ${origin}/v1/chat/completions {"model":"${models[0]?.id}","messages":[{"role":"user","content":"Hello"}]}`,
+    ),
+    skill(
+      "responses-api",
+      "OpenAI Responses API",
+      "OpenAI Responses API (alpha) translated to chat completions upstream.",
+      ["chat", "responses"],
+      `POST ${origin}/api/v1/responses {"model":"${models[0]?.id}","input":"Hello"}`,
+    ),
+  ];
+  if (embeddingsEnabled) {
+    skills.push(skill(
+      "embed-text",
+      "Free embeddings",
+      `2048-dim embeddings via ${embeddingModel}; free, no payment, up to 128 strings per call.`,
+      ["embeddings", "free", "search"],
+      `POST ${origin}/v1/embeddings {"input":"Hello","input_type":"query"}`,
+    ));
+  }
+  if (imagesEnabled) {
+    skills.push(
+      skill(
+        "image-generation",
+        "Image generation",
+        `Image generation with ${Object.keys(imageRates).length} models, priced per image and size.`,
+        ["image"],
+        `POST ${origin}/api/v1/images/generations {"model":"gpt-image-2","size":"1024x1024","prompt":"A maple leaf"}`,
+      ),
+      skill(
+        "image-editing",
+        "Image editing",
+        "Edit a PNG, JPEG or WebP supplied as a base64 data URI (maximum 10 MB).",
+        ["image", "editing"],
+        `POST ${origin}/api/v1/images/image2image {"model":"gpt-image-2","size":"1024x1024","prompt":"Make the leaf green","image":"data:image/png;base64,..."}`,
+      ),
+    );
+  }
+  if (jevEnabled) {
+    skills.push(skill(
+      "jev-decision",
+      "Structured decisions",
+      `Structured decisions via ${jevModel}: named questions (noul/choice/score) with instructions in, JSON answers out. $${jevPricePerMillion?.toFixed(2)}/1M input tokens.`,
+      ["decision", "structured"],
+      `POST ${origin}/jev {"model":"${jevModel}","state":"...","questions":{"billing":{"type":"noul","instructions":"Is this about billing?"}}}`,
+    ));
+  }
+  if (prepaidCodesEnabled) {
+    skills.push(
+      skill(
+        "buy-prepaid-key",
+        "Buy a prepaid API key",
+        "Issues a prepaid OpenAI-compatible bearer key for one GPT model (100000-1000000 token budget).",
+        ["prepaid", "budget"],
+        `POST ${origin}/prepaid/codes/auto {}`,
+      ),
+      skill(
+        "prepaid-key-status",
+        "Check prepaid key status",
+        `Free validity and token-budget check for an oms_buy_ key: GET ${prepaidStatusUrl} with the key as Bearer.`,
+        ["prepaid", "free"],
+        `GET ${prepaidStatusUrl} -H "Authorization: Bearer oms_buy_..."`,
+      ),
+    );
+  }
+  res.json({
+    protocolVersion: "0.2.1",
+    name: config.serviceName,
+    description:
+      `Pay-per-request AI API on ${chain.networkName}: GPT chat, image generation/editing, ` +
+      "Jev structured decisions, free embeddings and prepaid token packs. Skilled via the " +
+      "OpenAI-compatible HTTP interface in additionalInterfaces; every paid endpoint answers " +
+      "HTTP 402 with a x402 payment challenge first.",
+    url: origin,
+    version: "1.0.0",
+    capabilities: {
+      streaming: true,
+      extensions: [
+        {
+          uri: "https://github.com/coinbase/x402",
+          description: "x402 v2 pay-per-request: the first attempt returns HTTP 402 with PAYMENT-REQUIRED; retry with a signed PAYMENT-SIGNATURE header.",
+          required: true,
+        },
+      ],
+    },
+    additionalInterfaces: [
+      { url: `${origin}/v1`, transport: "HTTP", description: "OpenAI-compatible API (chat completions, embeddings, models)" },
+      { url: `${origin}/api/v1`, transport: "HTTP", description: "OpenAI-compatible API plus images and responses aliases" },
+      ...(prepaidCodesEnabled ? [{ url: prepaidApiBaseUrl, transport: "HTTP", description: "OpenAI-compatible API scoped to prepaid oms_buy_ bearer keys" }] : []),
+    ],
+    securitySchemes: {
+      x402: {
+        type: "apiKey",
+        in: "header",
+        name: "PAYMENT-SIGNATURE",
+        description: "x402 payment payload obtained from the 402 challenge (PAYMENT-REQUIRED header)",
+      },
+    },
+    security: [{ x402: [] }],
+    defaultInputModes: ["application/json"],
+    defaultOutputModes: ["application/json"],
+    skills,
+    provider: { organization: config.serviceName, url: origin },
+  });
+});
+
+/**
  * One-shot machine-readable index of everything this instance serves: routes,
  * access mode (x402 / free / prepaid bearer) and live per-unit pricing, so a
  * discovery agent can catalog the whole service from a single document.
@@ -1149,6 +1278,7 @@ app.get("/service-endpoints.json", (req: Request, res: Response) => {
     discovery: {
       openapi: `${origin}/openapi.json`,
       x402Manifest: `${origin}/.well-known/x402`,
+      agentCard: `${origin}/.well-known/agent-card.json`,
       llms: `${origin}/llms.txt`,
       agents: `${origin}/AI-AGENTS.md`,
       modelCatalog: `${origin}/v1/models`,
@@ -1858,6 +1988,7 @@ app.get("/llms.txt", (req: Request, res: Response) => {
       "",
       `${origin}/service-endpoints.json - one-shot machine-readable index of routes, access modes and pricing`,
       `${origin}/.well-known/x402 - x402 discovery document`,
+      `${origin}/.well-known/agent-card.json - A2A agent card with skills`,
       `${origin}/openapi.json - OpenAPI 3.1 specification`,
       `${origin}/AI-AGENTS.md - integration guide for agents`,
       `${origin}/llms.txt - this file`,
