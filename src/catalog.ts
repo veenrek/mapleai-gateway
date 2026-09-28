@@ -8,7 +8,7 @@
  */
 import { config } from "./config.js";
 import { MODEL_METADATA } from "./model-metadata.js";
-import { isTokenPriced, upstreamModelId, type TokenPricing } from "./models.js";
+import { isModelEnabled, isTokenPriced, upstreamModelId, type TokenPricing } from "./models.js";
 
 export interface CatalogModel {
   /** Public id clients send to us */
@@ -44,6 +44,7 @@ export function catalog(): CatalogModel[] {
   const out: CatalogModel[] = [];
   for (const [id, pricing] of Object.entries(config.modelPrices)) {
     if (!isTokenPriced(pricing)) continue;
+    if (!isModelEnabled(id)) continue;
     const meta = MODEL_METADATA[id];
     const fallback = derivedMetadata(id);
     out.push({
