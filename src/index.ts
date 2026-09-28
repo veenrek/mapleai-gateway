@@ -880,10 +880,25 @@ app.get("/v1/models", (req: Request, res: Response) => {
 app.get("/.well-known/x402", (req: Request, res: Response) => {
   const models = catalog();
   const origin = originOf(req);
+  // Card-grade display prices: crawlers get a stable per-resource range
+  // without computing quotes; the exact amount still lives in the challenge.
+  const minChargeDisplay = "$" + config.minChargeUsd.toFixed(4);
+  const chatPriceDisplay = "from " + minChargeDisplay + " per request";
+  const minImageUsd = imagesEnabled
+    ? Math.min(...Object.values(imageRates).flatMap((sizes) => Object.values(sizes as Record<string, number>)))
+    : 0;
+  const imagePriceDisplay = "from $" + minImageUsd.toFixed(4) + " per image";
+  const prepaidOffers = prepaidCodesEnabled ? prepaidModelOffers() : [];
+  const prepaidPriceDisplay = prepaidOffers.length > 0
+    ? "$" + Math.min(...prepaidOffers.map((o) => o.packPricesUsd[0].usd)).toFixed(3) +
+      "-" + "$" + Math.max(...prepaidOffers.map((o) => o.packPricesUsd[1].usd)).toFixed(2) + " per pack + fee"
+    : undefined;
   const resource = (method: string, path: string, extra: Record<string, unknown>) => ({
     method,
     path,
     description: CHAT_DESCRIPTION,
+    price: chatPriceDisplay,
+    tags: ["chat", "llm", "gpt"],
     pricedBy: "input tokens + max_tokens output, per-model $/1M-token rates",
     ...extra,
   });
@@ -901,7 +916,7 @@ app.get("/.well-known/x402", (req: Request, res: Response) => {
     serviceEndpoints: `${origin}/service-endpoints.json`,
     minimumChargeUsd: config.minChargeUsd,
     resources: [
-      ...(nftEnabled ? Object.keys(nftNetworks).map((network) => ({ method: "GET", path: "/api/v1/" + network + "/nft/getNFTMetadata", description: nftDescription, price: nftPrice, pricedBy: "per request", exampleQuery: { contractAddress: nftExampleAddress } })) : []),
+      ...(nftEnabled ? Object.keys(nftNetworks).map((network) => ({ method: "GET", path: "/api/v1/" + network + "/nft/getNFTMetadata", description: nftDescription, price: nftPrice, tags: ["nft", "blockchain", "metadata"], pricedBy: "per request", exampleQuery: { contractAddress: nftExampleAddress } })) : []),
       resource("POST", "/v1/chat/completions", {}),
       resource("POST", "/api/v1/chat/completions", {}),
 
@@ -909,12 +924,16 @@ app.get("/.well-known/x402", (req: Request, res: Response) => {
         method: "POST",
         path: "/api/v1/responses",
         description: "OpenAI-compatible Responses API (alpha)",
+        price: chatPriceDisplay,
+        tags: ["chat", "llm", "gpt", "responses"],
         pricedBy: "input tokens + max_output_tokens, per-model $/1M-token rates",
       },
       {
         method: "POST",
         path: "/v1/responses",
         description: "OpenAI-compatible Responses API (alpha)",
+        price: chatPriceDisplay,
+        tags: ["chat", "llm", "gpt", "responses"],
         pricedBy: "input tokens + max_output_tokens, per-model $/1M-token rates",
       },
       ...(imagesEnabled ? [
@@ -922,6 +941,8 @@ app.get("/.well-known/x402", (req: Request, res: Response) => {
           method: "POST",
           path: "/api/v1/images/generations",
           description: "Image generation",
+          price: imagePriceDisplay,
+          tags: ["image", "generation"],
           pricedBy: "model, size and image count",
           exampleBody: imageExample,
         },
@@ -929,17 +950,22 @@ app.get("/.well-known/x402", (req: Request, res: Response) => {
           method: "POST",
           path: "/api/v1/images/image2image",
           description: "Image editing",
+          price: imagePriceDisplay,
+          tags: ["image", "editing"],
           pricedBy: "model, size and image count",
           exampleBody: imageEditExample,
         },
       ] : []),
-      ...(embeddingsEnabled ? [{ method: "POST", path: "/v1/embeddings", description: "Free NVIDIA Nemotron embeddings", pricedBy: "free", exampleBody: { input: "Hello", input_type: "query", encoding_format: "float" } }] : []),
-      ...(jevEnabled ? [{ method: "POST", path: "/jev", description: "Jev structured decisions",
-        pricedBy: "input tokens plus payment overhead", exampleBody: jevExample }] : []),
+      ...(embeddingsEnabled ? [{ method: "POST", path: "/v1/embeddings", description: "Free NVIDIA Nemotron embeddings (2048-dim)", price: "$0.00", tags: ["embeddings", "free"], pricedBy: "free", exampleBody: { input: "Hello", input_type: "query", encoding_format: "float" } }] : []),
+      ...(jevEnabled && jevPricePerMillion !== undefined ? [{ method: "POST", path: "/jev", description: "Jev structured decisions",
+        price: chatPriceDisplay + " (" + "$" + jevPricePerMillion.toFixed(2) + "/1M input tokens)",
+        tags: ["decision", "classification", "structured"], pricedBy: "input tokens plus payment overhead", exampleBody: jevExample }] : []),
       ...(prepaidCodesEnabled ? [{
         method: "POST",
         path: "/prepaid/codes",
         description: "Buy a prepaid API code for one GPT model and a token budget in 100000-token steps (100000-1000000)",
+        price: prepaidPriceDisplay,
+        tags: ["prepaid", "credits", "key"],
         pricedBy: "input rate * tokens + network settlement fee",
         exampleBody: prepaidCodeExample,
         outputExample: prepaidCodeOutputExample,
@@ -947,6 +973,8 @@ app.get("/.well-known/x402", (req: Request, res: Response) => {
         method: "POST",
         path: "/prepaid/codes/auto",
         description: "One-shot agent tap: empty body buys the default 100000-token openai/gpt-6-luna key",
+        price: prepaidPriceDisplay,
+        tags: ["prepaid", "credits", "key", "tap"],
         pricedBy: "input rate * tokens + network settlement fee",
         exampleBody: {},
         outputExample: prepaidCodeOutputExample,
