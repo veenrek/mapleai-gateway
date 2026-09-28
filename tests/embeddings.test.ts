@@ -79,6 +79,28 @@ test("oversized invalid input is truncated in the private data log", () => {
   assert.equal("vectors" in event, false);
 });
 
+test("discovery probe (model-only body) gets a 200 with an empty list and a hint", () => {
+  const result = invokeValidator({ model: "nvidia/nemotron-3-embed-1b" });
+  const payload = result.response as { object: string; data: unknown[]; model: string; hint: string };
+
+  assert.equal(result.status, 200);
+  assert.equal(result.nextCalled, false);
+  assert.equal(payload.object, "list");
+  assert.deepEqual(payload.data, []);
+  assert.equal(payload.model, "nvidia/nemotron-3-embed-1b");
+  assert.ok(payload.hint.includes("input"));
+
+  const events = fs
+    .readFileSync(process.env.EMBEDDING_DATA_FILE!, "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  const event = events.at(-1);
+  assert.equal(event.status, 200);
+  assert.equal(event.failure.reason, "missing_input");
+  assert.equal("vectors" in event, false);
+});
+
 test("missing, empty, oversized, and mixed-type inputs return descriptive errors", () => {
   const cases: Array<{ body: unknown; param: string; message: string }> = [
     { body: {}, param: "input", message: "input is required." },

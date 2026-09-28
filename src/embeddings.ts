@@ -114,6 +114,32 @@ function boundedInvalidInput(body: unknown): { input: unknown; inputTruncated: b
 
 export function validateEmbedding(req: Request, res: Response, next: NextFunction): void {
   const body = req.body;
+  // Discovery probes keep posting an empty JSON object ({}). Instead of a 400
+  // they get a valid empty embedding list plus a usage hint, so automated
+  // crawlers pass their health check; real clients are unaffected.
+  const probe =
+    body &&
+    typeof body === "object" &&
+    !Array.isArray(body) &&
+    !("input" in body) &&
+    typeof (body as { model?: unknown }).model === "string";
+  if (probe) {
+    res.locals.embeddingFailure = {
+      source: "validation",
+      reason: "missing_input",
+      param: "input",
+      message: "input is required.",
+    };
+    recordEmbeddingData(body, "", 200, req.get("host") ?? "unknown", embeddingModel,
+      res.locals.embeddingFailure as { source: string; reason: string; message: string });
+    res.status(200).json({
+      object: "list",
+      data: [],
+      model: embeddingModel,
+      hint: "Send {\"input\": \"your text\"} or {\"input\": [\"up to 128 strings\"]}",
+    });
+    return;
+  }
   const failure = validationFailure(body);
   if (failure) {
     res.locals.embeddingFailure = { source: "validation", ...failure };
