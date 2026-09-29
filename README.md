@@ -93,6 +93,11 @@ A runnable end-to-end demo (free embeddings → paid GPT answer) lives in
 [`examples/embeddings-to-chat/`](examples/embeddings-to-chat/) and online at
 `https://base.mapleai.shop/examples/embeddings-to-chat/`.
 
+Building an agent? Fork the [`agent-starter/`](agent-starter/) template —
+repo instructions for agent clients (`CLAUDE.md`/`AGENTS.md`), MCP wiring,
+a full paid scenario script (free embeddings → prepaid tap → prepaid chat),
+and a free CI smoke for all four gateways.
+
 ## Prepaid API keys
 
 Buy a prepaid bearer key for one GPT model with a single x402 payment:

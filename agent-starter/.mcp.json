@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "mapleai": {
+      "command": "npx",
+      "args": ["-y", "-p", "mapleai-mcp@0.2.0", "mapleai-mcp"],
+      "env": {
+        "MCP_NETWORK": "base",
+        "MCP_MAX_PAYMENT_USDC": "0.01"
+      }
+    }
+  }
+}

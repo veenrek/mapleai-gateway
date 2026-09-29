@@ -1,0 +1,43 @@
+name: smoke
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "13 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      paid:
+        description: "Also run the paid scenario (needs EVM_PRIVATE_KEY or SVM_PRIVATE_KEY secret)"
+        type: boolean
+        default: false
+
+jobs:
+  free-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm run smoke
+        working-directory: .
+
+  paid-scenario:
+    if: github.event_name == 'workflow_dispatch' && inputs.paid
+    runs-on: ubuntu-latest
+    env:
+      EVM_PRIVATE_KEY: ${{ secrets.EVM_PRIVATE_KEY }}
+      SVM_PRIVATE_KEY: ${{ secrets.SVM_PRIVATE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: paid scenario (Base)
+        if: env.EVM_PRIVATE_KEY != ''
+        run: npm run scenario -- --network base
+      - name: paid scenario (Solana)
+        if: env.SVM_PRIVATE_KEY != ''
+        run: npm run scenario -- --network solana
