@@ -8,6 +8,7 @@ export const HIDEABLE_SIDEBAR_ITEM_IDS = [
   "marketplace",
   "buy-gemini-pro",
   "prepaid-keys",
+  "gateway-analytics",
   "relay-pool",
   "embedded-services",
   "combos",
@@ -220,6 +221,14 @@ const OMNI_PROXY_ITEMS: readonly SidebarItemDefinition[] = [
     labelFallback: "Prepaid Keys",
     subtitleFallback: "Per-key upstream usage & cost",
     icon: "sell",
+  },
+  {
+    id: "gateway-analytics",
+    href: "/dashboard/gateway-analytics",
+    i18nKey: "gatewayAnalytics",
+    labelFallback: "Gateway Analytics",
+    subtitleFallback: "x402 revenue, embeddings, Jev, free tier",
+    icon: "monitoring",
   },
   {
     id: "relay-pool",
