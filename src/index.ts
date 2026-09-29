@@ -21,6 +21,7 @@ import { paymentEventMiddleware } from "./payment-events.js";
 import { fetchUpstreamChat } from "./upstream.js";
 import { fetchImage, imageModels, imageRates, imagesEnabled, quoteImage, validateImage, type ImageKind, type ImageRequest } from "./images.js";
 import { fetchJev, jevEnabled, jevModel, jevPricePerMillion, quoteJev, recordJevData, validateJev } from "./jev.js";
+import { freeGptOssEnabled, freeGptOssModel, freeQuotaSnapshot, handleFreeGptOssChat } from "./free-gptoss.js";
 import {
   embeddingModel,
   embeddingRequestSchema,
@@ -616,6 +617,15 @@ async function handleChatCompletions(req: Request, res: Response): Promise<void>
 
 app.post(["/v1/chat/completions", "/api/v1/chat/completions"], handleChatCompletions);
 
+// Free gpt-oss-20b tier — no x402, quota-capped per agent, combo-routed.
+if (freeGptOssEnabled) {
+  app.post(["/v1/free/chat/completions", "/api/v1/free/chat/completions"], handleFreeGptOssChat);
+  app.get("/v1/free/chat/completions/quota", (req: Request, res: Response) => {
+    const ip = (req.get("cf-connecting-ip") ?? req.get("x-forwarded-for")?.split(",")[0]?.trim() ?? req.socket.remoteAddress) ?? "unknown";
+    res.json({ object: "free_quota", model: freeGptOssModel, ...freeQuotaSnapshot(ip.slice(0, 80)) });
+  });
+}
+
 /**
  * POST /api/v1/responses (+ /v1/responses) — OpenAI Responses API (alpha).
  *
@@ -905,7 +915,11 @@ app.get("/v1/models", (req: Request, res: Response) => {
         output: m.pricing.output,
         unit: "USD per 1M tokens",
       },
-    })), ...imageData, ...(embeddingsEnabled ? [{ id: embeddingModel, object: "model", created: 1700000000, owned_by: "nvidia", type: "embedding", pricing: { input: 0, output: 0, unit: "free" }, endpoint: "/v1/embeddings" }] : []), ...(jevEnabled ? [{ id: jevModel, object: "model", created: 1700000000,
+    })), ...imageData, ...(embeddingsEnabled ? [{ id: embeddingModel, object: "model", created: 1700000000, owned_by: "nvidia", type: "embedding", pricing: { input: 0, output: 0, unit: "free" }, endpoint: "/v1/embeddings" }] : []), ...(freeGptOssEnabled ? [{
+      id: freeGptOssModel, object: "model", created: 1700000000, owned_by: "nvidia", type: "chat",
+      endpoint: "/v1/free/chat/completions", pricing: { input: 0, output: 0, unit: "free" },
+      free_tier: { per_10min_per_ip: config.freeGptOssPer10Min, per_day_per_ip: config.freeGptOssPerDay, max_output_tokens: config.freeGptOssMaxTokens },
+    }] : []), ...(jevEnabled ? [{ id: jevModel, object: "model", created: 1700000000,
       owned_by: "jev", type: "structured_decision", protocols: { primary: "systemone", supported: ["systemone"] },
       endpoint: "/jev", pricing: { input: jevPricePerMillion, output: 0, unit: "USD per 1M tokens" } }] : [])],
     default_price_per_request: config.defaultPrice,

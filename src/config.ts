@@ -89,6 +89,12 @@ export const config = {
     .map((m) => m.trim())
     .filter((m) => m.length > 0),
 
+  /** Free gpt-oss-20b tier: combo-routed, quota-limited per agent (see free-gptoss.ts). */
+  internalOssKey: process.env.X402_INTERNAL_OSS_KEY ?? process.env.X402_INTERNAL_LUNA_KEY,
+  freeGptOssPer10Min: Number(process.env.FREE_OSS_PER_10MIN ?? 10),
+  freeGptOssPerDay: Number(process.env.FREE_OSS_PER_DAY ?? 100),
+  freeGptOssMaxTokens: Number(process.env.FREE_OSS_MAX_TOKENS ?? 2048),
+
   modelPrices: parseModelPrices(process.env.MODEL_PRICES),
   modelMapping: parseModelMapping(process.env.MODEL_MAPPING),
   /** Fallback flat price per request for models not listed in MODEL_PRICES */
