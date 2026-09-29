@@ -424,6 +424,12 @@ const HOP_BY_HOP = new Set([
   "content-encoding",
 ]);
 
+/** Upstreams that alias a model (e.g. the internal combo router) must not leak the backing id. */
+function rewriteStreamModel(line: string, model: string): string {
+  if (!line.startsWith("data: {")) return line;
+  return line.replace(/"model":"[^"]*"/, `"model":"${model}"`);
+}
+
 /** Externally visible origin: configured value, else the request's own host. */
 function originOf(req: Request): string {
   return config.publicBaseUrl || `${req.protocol}://${req.get("host")}`;
@@ -546,12 +552,17 @@ async function handleChatCompletions(req: Request, res: Response): Promise<void>
       const reader = upstream.body.getReader();
       const decoder = new TextDecoder();
       let tail = "";
+      let carry = "";
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
-        tail = (tail + decoder.decode(value, { stream: true })).slice(-65536);
-        res.write(Buffer.from(value));
+        const text = carry + decoder.decode(value, { stream: true });
+        tail = (tail + text).slice(-65536);
+        const lines = text.split("\n");
+        carry = lines.pop() ?? "";
+        for (const line of lines) res.write(rewriteStreamModel(line, upstreamModel) + "\n");
       }
+      if (carry) res.write(rewriteStreamModel(carry, upstreamModel));
       res.end();
 
       const usage = parseUsageFromSse(tail);
@@ -583,9 +594,18 @@ async function handleChatCompletions(req: Request, res: Response): Promise<void>
     recordUsage(record);
     logUsage(record);
 
+    let out = body.toString("utf8");
+    try {
+      const parsed = JSON.parse(out) as { model?: unknown };
+      if (parsed && typeof parsed === "object" && typeof parsed.model === "string" && parsed.model !== upstreamModel) {
+        parsed.model = upstreamModel;
+        out = JSON.stringify(parsed);
+      }
+    } catch { /* non-JSON upstream body passes through unchanged */ }
+
     res.status(upstream.status);
     res.setHeader("content-type", "application/json; charset=utf-8");
-    res.send(body);
+    res.send(out);
   } catch (error) {
     console.error("[proxy] upstream error:", error);
     res
