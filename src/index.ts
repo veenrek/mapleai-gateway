@@ -20,7 +20,7 @@ import { actualCostUsd, extractPayer, parseUsage, parseUsageFromSse, recordUsage
 import { paymentEventMiddleware } from "./payment-events.js";
 import { fetchUpstreamChat } from "./upstream.js";
 import { fetchImage, imageModels, imageRates, imagesEnabled, quoteImage, validateImage, type ImageKind, type ImageRequest } from "./images.js";
-import { fetchJev, jevEnabled, jevModel, jevPricePerMillion, quoteJev, validateJev } from "./jev.js";
+import { fetchJev, jevEnabled, jevModel, jevPricePerMillion, quoteJev, recordJevData, validateJev } from "./jev.js";
 import {
   embeddingModel,
   embeddingRequestSchema,
@@ -740,25 +740,38 @@ if (imagesEnabled) {
 }
 
 if (jevEnabled) app.post("/jev", async (req, res) => {
+  const started = Date.now();
+  const logEntry = {
+    domain: req.get("host") ?? "unknown",
+    request: { state: (req.body as { state?: unknown })?.state, questions: (req.body as { questions?: unknown })?.questions },
+    payer: extractPayer(req.get("payment-signature")),
+  };
   try {
     const upstream = await fetchJev(req.body);
     const raw = await upstream.text();
     if (!upstream.ok) {
       console.error("[jev] upstream HTTP " + upstream.status);
+      recordJevData({ ...logEntry, status: upstream.status, latencyMs: Date.now() - started,
+        failure: { source: "upstream", reason: "upstream_http_" + upstream.status } });
       res.status(upstream.status).type("application/json").send(raw);
       return;
     }
     let data: unknown;
     try { data = JSON.parse(raw); } catch { data = undefined; }
     if (!data || typeof data !== "object" || !("answers" in data)) {
+      recordJevData({ ...logEntry, status: 502, latencyMs: Date.now() - started,
+        failure: { source: "upstream", reason: "unexpected_response" } });
       res.status(502).json({ error: { message: "Unexpected Jev response", type: "upstream_error" } });
       return;
     }
+    recordJevData({ ...logEntry, status: 200, latencyMs: Date.now() - started, response: data });
     recordUsage({ ts: new Date().toISOString(), model: jevModel,
-      payer: extractPayer(req.get("payment-signature")), upstreamStatus: upstream.status, quotedUsd: await quoteJev(req.body) });
+      payer: logEntry.payer, upstreamStatus: upstream.status, quotedUsd: await quoteJev(req.body) });
     res.status(200).json(data);
   } catch (error) {
     console.error("[jev] upstream request failed:", error instanceof Error ? error.name : "unknown");
+    recordJevData({ ...logEntry, status: 502, latencyMs: Date.now() - started,
+      failure: { source: "transport", reason: error instanceof Error ? error.name : "unknown" } });
     res.status(502).json({ error: { message: "Jev request failed", type: "upstream_error" } });
   }
 });

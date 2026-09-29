@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
+import { appendFileSync } from "node:fs";
 import { config } from "./config.js";
 import { paymentOverheadUsd } from "./gas.js";
 import { get_encoding } from "tiktoken";
@@ -52,4 +53,37 @@ export function fetchJev(body: unknown): Promise<globalThis.Response> {
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(120_000),
   });
+}
+
+type JevFailure = { source: "upstream" | "transport"; reason: string; message?: string };
+const jevDataPreviewLimit = 64 * 1024;
+
+function cappedJson(value: unknown): unknown {
+  const text = JSON.stringify(value);
+  if (text === undefined || text.length <= jevDataPreviewLimit) return value;
+  return { truncated: true, preview: text.slice(0, jevDataPreviewLimit) };
+}
+
+export function recordJevData(entry: {
+  domain: string;
+  request: { state?: unknown; questions?: unknown };
+  status: number;
+  latencyMs: number;
+  payer?: string;
+  response?: unknown;
+  failure?: JevFailure;
+}): void {
+  const event = {
+    ts: new Date().toISOString(),
+    domain: entry.domain,
+    model: jevModel,
+    status: entry.status,
+    latencyMs: entry.latencyMs,
+    ...(entry.payer ? { payer: entry.payer } : {}),
+    request: { state: cappedJson(entry.request.state), questions: cappedJson(entry.request.questions) },
+    ...(entry.response !== undefined ? { response: cappedJson(entry.response) } : {}),
+    ...(entry.failure ? { failure: entry.failure } : {}),
+  };
+  try { appendFileSync(config.jevDataFile, JSON.stringify(event) + "\n", { mode: 0o600 }); }
+  catch (error) { console.error("[jev] data log write failed:", error); }
 }

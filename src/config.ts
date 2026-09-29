@@ -69,6 +69,7 @@ export const config = {
   nvidiaApiKey: process.env.NVIDIA_API_KEY,
   embeddingStatsFile: process.env.EMBEDDING_STATS_FILE ?? "./embedding-events.jsonl",
   embeddingDataFile: process.env.EMBEDDING_DATA_FILE ?? "./embedding-data.jsonl",
+  jevDataFile: process.env.JEV_DATA_FILE ?? "./jev-data.jsonl",
   embeddingStatsToken: process.env.EMBEDDING_STATS_TOKEN,
   infuraProjectId: process.env.INFURA_PROJECT_ID,
   prepaidIssuerUrl: process.env.PREPAID_ISSUER_URL ?? "http://127.0.0.1:4031/api/internal/prepaid-codes",
