@@ -20,6 +20,8 @@ export type PaymentEvent = {
   transaction?: string;
   reason?: string;
   tokens?: number;
+  clientIp?: string;
+  userAgent?: string;
 };
 
 const paidPaths = new Set(['/v1/chat/completions', '/api/v1/chat/completions', '/v1/responses', '/api/v1/responses',
@@ -52,6 +54,11 @@ function signedInfo(value: string | undefined) {
   } catch { return undefined; }
 }
 
+function clientIp(req: Request): string | undefined {
+  const forwarded = req.get('cf-connecting-ip') ?? req.get('x-forwarded-for')?.split(',')[0];
+  return clean(forwarded?.trim() ?? req.socket.remoteAddress, 60);
+}
+
 export function paymentEventForResponse(req: Request, res: Response, id: string): PaymentEvent | undefined {
   const signature = req.get('payment-signature') ?? req.get('x-payment') ?? undefined;
   const signed = signedInfo(signature);
@@ -59,6 +66,7 @@ export function paymentEventForResponse(req: Request, res: Response, id: string)
     id, ts: new Date().toISOString(), kind: 'request_failed', route: req.path,
     model: clean(req.body?.model, 100), network: config.network, httpStatus: res.statusCode, ...signed,
     ...(req.path === '/prepaid/codes' && Number.isSafeInteger(req.body?.tokens) ? { tokens: req.body.tokens } : {}),
+    clientIp: clientIp(req), userAgent: clean(req.get('user-agent'), 200),
   };
   const receiptHeader = res.getHeader('payment-response');
   if (typeof receiptHeader === 'string') {
