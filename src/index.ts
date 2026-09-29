@@ -1016,6 +1016,7 @@ app.get("/.well-known/x402", (req: Request, res: Response) => {
         },
       ] : []),
       ...(embeddingsEnabled ? [{ method: "POST", path: "/v1/embeddings", description: "Free NVIDIA Nemotron embeddings (2048-dim)", price: "$0.00", tags: ["embeddings", "free"], pricedBy: "free", exampleBody: { input: "Hello", input_type: "query", encoding_format: "float" } }] : []),
+      ...(freeGptOssEnabled ? [{ method: "POST", path: "/v1/free/chat/completions", description: `Free nvidia/gpt-oss-20b chat (rate-limited ${config.freeGptOssPer10Min}/10min + ${config.freeGptOssPerDay}/day per agent)`, price: "$0.00", tags: ["chat", "free"], pricedBy: "free tier with per-agent quota", exampleBody: { model: "nvidia/gpt-oss-20b", messages: [{ role: "user", content: "Hello" }], stream: false } }] : []),
       ...(jevEnabled && jevPricePerMillion !== undefined ? [{ method: "POST", path: "/jev", description: "Jev structured decisions",
         price: chatPriceDisplay + " (" + "$" + jevPricePerMillion.toFixed(2) + "/1M input tokens)",
         tags: ["decision", "classification", "structured"], pricedBy: "input tokens plus payment overhead", exampleBody: jevExample }] : []),
@@ -1096,6 +1097,15 @@ app.get("/.well-known/agent-card.json", (req: Request, res: Response) => {
       `2048-dim embeddings via ${embeddingModel}; free, no payment, up to 128 strings per call.`,
       ["embeddings", "free", "search"],
       `POST ${origin}/v1/embeddings {"input":"Hello","input_type":"query"}`,
+    ));
+  }
+  if (freeGptOssEnabled) {
+    skills.push(skill(
+      "chat-free-gptoss",
+      "Free gpt-oss-20b chat",
+      `Free ${freeGptOssModel} chat completions; rate-limited ${config.freeGptOssPer10Min}/10min + ${config.freeGptOssPerDay}/day per agent IP, max ${config.freeGptOssMaxTokens} output tokens. No payment required.`,
+      ["chat", "free", "gpt-oss"],
+      `POST ${origin}/v1/free/chat/completions {"messages":[{"role":"user","content":"Hello"}],"stream":false}`,
     ));
   }
   if (imagesEnabled) {
@@ -2002,6 +2012,16 @@ app.get("/llms.txt", (req: Request, res: Response) => {
       ] : []),
      ...(jevEnabled ? ["", "POST " + origin + "/jev", "  Jev structured decisions ($" + jevPricePerMillion?.toFixed(2) + "/1M input tokens plus payment overhead). Send model=jev-latest, state and named questions with type and instructions."] : []),
       ...(embeddingsEnabled ? ["", "POST " + origin + "/v1/embeddings", "  Free NVIDIA embeddings with nvidia/nemotron-3-embed-1b."] : []),
+      ...(freeGptOssEnabled ? [
+        "",
+        "POST " + origin + "/v1/free/chat/completions",
+        "  Free nvidia/gpt-oss-20b chat completions (no payment). Rate-limited:",
+        "  " + config.freeGptOssPer10Min + " requests/10min and " + config.freeGptOssPerDay + " requests/day per agent IP;",
+        "  max_tokens capped at " + config.freeGptOssMaxTokens + ". Returns 429 free_tier_exhausted",
+        "  with retry-after when the window is spent.",
+        "GET " + origin + "/v1/free/chat/completions/quota",
+        "  Current free-tier window usage for your IP (free).",
+      ] : []),
       ...(nftEnabled ? ["", "GET " + origin + "/api/v1/{chainNetwork}/nft/getNFTMetadata?contractAddress=0x...", "  On-chain NFT contract metadata via Infura; $0.002 USDC per request.", "  Networks: " + Object.keys(nftNetworks).join(", ") + ". Returns name, symbol, contractURI and ERC interface support; unsupported fields are null."] : []),
       ...(prepaidCodesEnabled ? [
         "",

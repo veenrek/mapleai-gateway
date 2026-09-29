@@ -16,6 +16,7 @@ import { chainInfo } from "./chain.js";
 import { imageRates, imagesEnabled } from "./images.js";
 import { embeddingModel, embeddingsEnabled } from "./embeddings.js";
 import { jevEnabled, jevModel, jevPricePerMillion } from "./jev.js";
+import { freeGptOssEnabled, freeGptOssModel } from "./free-gptoss.js";
 import { nftEnabled, nftNetworks } from "./nft.js";
 import { prepaidCodesEnabled, prepaidStatusUrl } from "./prepaid-codes.js";
 
@@ -216,6 +217,8 @@ export function docVars(origin: string): DocVars {
       ' per 1M input tokens, output free, plus settlement overhead. POST ' + origin + '/jev uses SystemOne; send model, state and named questions, each with type and instructions. Read answers from the response.\n\n' : '',
     AGENT_JEV_ENDPOINT: jevEnabled ? '| POST | /jev | Jev SystemOne decisions |' : '',
     AGENT_EMBEDDINGS: embeddingsEnabled ? '## Free Embeddings\n\n- ' + embeddingModel + ': free POST ' + origin + '/v1/embeddings; send input as a string or array of strings.\n\n' : '',
+    AGENT_FREE_OSS: freeGptOssEnabled ? '## Free Chat (gpt-oss-20b)\n\n- ' + freeGptOssModel + ': free POST ' + origin + '/v1/free/chat/completions; no payment. Rate-limited ' + config.freeGptOssPer10Min + '/10min and ' + config.freeGptOssPerDay + '/day per agent IP; max_tokens capped at ' + config.freeGptOssMaxTokens + '. Check remaining window: GET ' + origin + '/v1/free/chat/completions/quota.\n\n' : '',
+    AGENT_FREE_OSS_ENDPOINT: freeGptOssEnabled ? '| POST | /v1/free/chat/completions | Free gpt-oss-20b chat (quota-limited) |' : '',
     HOME_NFT: nftEnabled ? '<section id="nft"><h2>NFT contract metadata</h2><p class="h2sub">$0.002 USDC per request. Ethereum, Polygon, Arbitrum, Optimism, Base, Linea and Avalanche.</p><p><code>GET /api/v1/{chainNetwork}/nft/getNFTMetadata</code> &nbsp; <a href="/developers#nft">API guide</a></p></section>' : '',
     DEVELOPER_NFT: nftEnabled ? '<section id="nft"><h2>NFT contract metadata</h2><p class="muted">$0.002 USDC per request via x402. Reads on-chain contract metadata through Infura. Returns name, symbol, contractURI, tokenType and ERC interface support; unsupported fields are null. Off-chain metadata and wallet holdings are excluded.</p><div class="snippet"><pre><code>GET ' + origin + '/api/v1/ethereum-mainnet/nft/getNFTMetadata?contractAddress=0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D</code></pre></div><p>Networks: ' + Object.keys(nftNetworks).join(', ') + '. The data network is independent of the USDC payment network selected by domain.</p></section>' : '',
     AGENT_NFT: nftEnabled ? '## NFT Contract Metadata\n\nGET ' + origin + '/api/v1/{chainNetwork}/nft/getNFTMetadata?contractAddress=0x... costs $0.002 USDC per request via x402. Networks: ' + Object.keys(nftNetworks).join(', ') + '. Returns on-chain name, symbol, contractURI, tokenType and ERC interface support; unsupported fields are null. Does not retrieve wallet holdings or off-chain token metadata.\n\n' : '',
