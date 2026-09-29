@@ -1,8 +1,47 @@
 import type { Request, Response } from "express";
+import { appendFileSync } from "node:fs";
 import { config } from "./config.js";
 
 export const freeGptOssModel = "nvidia/gpt-oss-20b";
 const comboModel = "gpt-oss-20b";
+
+const dataFile = process.env.FREE_OSS_DATA_FILE ?? "./free-oss-data.jsonl";
+const previewLimit = 64 * 1024;
+
+function cappedJson(value: unknown): unknown {
+  const text = JSON.stringify(value);
+  if (text === undefined || text.length <= previewLimit) return value;
+  return { truncated: true, preview: text.slice(0, previewLimit) };
+}
+
+/** Private operator log for the free tier: request bodies + outcomes, mode 0600, never public. */
+export function recordFreeOssData(entry: {
+  domain: string;
+  clientIp: string;
+  request: { messages?: unknown; stream?: boolean; max_tokens?: unknown };
+  status: number;
+  latencyMs: number;
+  response?: unknown;
+  failure?: { source: "validation" | "quota" | "upstream" | "transport"; reason: string };
+}): void {
+  const event = {
+    ts: new Date().toISOString(),
+    domain: entry.domain,
+    model: freeGptOssModel,
+    clientIp: entry.clientIp,
+    status: entry.status,
+    latencyMs: entry.latencyMs,
+    request: {
+      stream: entry.request.stream === true,
+      max_tokens: cappedJson(entry.request.max_tokens),
+      messages: cappedJson(entry.request.messages),
+    },
+    ...(entry.response !== undefined ? { response: cappedJson(entry.response) } : {}),
+    ...(entry.failure ? { failure: entry.failure } : {}),
+  };
+  try { appendFileSync(dataFile, JSON.stringify(event) + "\n", { mode: 0o600 }); }
+  catch (error) { console.error("[free-gptoss] data log write failed:", error); }
+}
 
 export const freeGptOssEnabled =
   Boolean(config.internalOssKey) && config.freeGptOssPer10Min > 0 && config.freeGptOssPerDay > 0;
@@ -60,13 +99,24 @@ const modelRewriteFrom = /"model":"[^"]*"/g;
 
 /** Free gpt-oss-20b chat — combo-routed across the NVIDIA account pool, rate-limited per agent. */
 export async function handleFreeGptOssChat(req: Request, res: Response): Promise<void> {
+  const started = Date.now();
+  const domain = req.get("host") ?? "unknown";
+  const ipEarly = clientIp(req);
+  const logReq = () => ({
+    domain,
+    clientIp: ipEarly,
+    request: { messages: (req.body as { messages?: unknown })?.messages, stream: (req.body as { stream?: unknown })?.stream === true, max_tokens: (req.body as { max_tokens?: unknown })?.max_tokens },
+  });
+
   const body = req.body as Record<string, unknown> | undefined;
   if (!body || typeof body !== "object" || Array.isArray(body)) {
+    recordFreeOssData({ ...logReq(), status: 400, latencyMs: Date.now() - started, failure: { source: "validation", reason: "non_object_body" } });
     res.status(400).json({ error: { message: "JSON body required", type: "invalid_request" } });
     return;
   }
   const requested = typeof body.model === "string" ? body.model : freeGptOssModel;
   if (requested !== freeGptOssModel && requested !== comboModel) {
+    recordFreeOssData({ ...logReq(), status: 400, latencyMs: Date.now() - started, failure: { source: "validation", reason: "unsupported_model" } });
     res.status(400).json({
       error: {
         message: `This free endpoint serves ${freeGptOssModel} only; see GET /v1/models for paid models.`,
@@ -77,6 +127,7 @@ export async function handleFreeGptOssChat(req: Request, res: Response): Promise
     return;
   }
   if (!Array.isArray(body.messages) || body.messages.length === 0) {
+    recordFreeOssData({ ...logReq(), status: 400, latencyMs: Date.now() - started, failure: { source: "validation", reason: "missing_messages" } });
     res.status(400).json({ error: { message: "messages[] required", type: "invalid_request" } });
     return;
   }
@@ -96,6 +147,7 @@ export async function handleFreeGptOssChat(req: Request, res: Response): Promise
   res.setHeader("x-ratelimit-limit-day", config.freeGptOssPerDay);
   if (!quota.ok) {
     res.setHeader("retry-after", quota.retryAfterSec);
+    recordFreeOssData({ ...logReq(), status: 429, latencyMs: Date.now() - started, failure: { source: "quota", reason: "free_tier_exhausted" } });
     res.status(429).json({
       error: {
         message: `free tier limit reached (${config.freeGptOssPer10Min}/10min or ${config.freeGptOssPerDay}/day per agent). Retry after the window resets, or use the paid models via x402 (see /v1/models).`,
@@ -127,6 +179,11 @@ export async function handleFreeGptOssChat(req: Request, res: Response): Promise
           out = JSON.stringify(parsed);
         } catch { /* pass through */ }
       }
+      recordFreeOssData({
+        ...logReq(), status: upstream.status, latencyMs: Date.now() - started,
+        response: upstream.ok ? out : undefined,
+        ...(upstream.ok ? {} : { failure: { source: "upstream" as const, reason: "upstream_http_" + upstream.status } }),
+      });
       res.status(upstream.status).type("application/json").send(out);
       return;
     }
@@ -149,11 +206,17 @@ export async function handleFreeGptOssChat(req: Request, res: Response): Promise
         for (const line of lines) res.write(line.replace(modelRewriteFrom, `"model":"${freeGptOssModel}"`) + "\n");
       }
       if (carry) res.write(carry.replace(modelRewriteFrom, `"model":"${freeGptOssModel}"`));
+      recordFreeOssData({
+        ...logReq(), status: upstream.status, latencyMs: Date.now() - started,
+        response: { streamed: true },
+        ...(upstream.ok ? {} : { failure: { source: "upstream" as const, reason: "upstream_http_" + upstream.status } }),
+      });
     } finally {
       res.end();
     }
   } catch (error) {
     console.error("[free-gptoss] upstream error:", error instanceof Error ? error.name : "unknown");
+    recordFreeOssData({ ...logReq(), status: 502, latencyMs: Date.now() - started, failure: { source: "transport", reason: error instanceof Error ? error.name : "unknown" } });
     res.status(502).json({ error: { message: "free tier upstream temporarily unavailable", type: "upstream_error" } });
   }
 }

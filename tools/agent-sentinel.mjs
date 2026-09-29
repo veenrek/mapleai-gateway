@@ -365,6 +365,27 @@ for (const flag of activeDomains) {
     await checkChallenge(domain.origin + "/prepaid/codes/auto", domain, {}, 20_000n);
     return "shape ok";
   });
+
+  await probe(`${flag} free oss chat`, async () => {
+    const res = await fetch(domain.origin + "/v1/free/chat/completions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", content: "Sentinel heartbeat: reply with OK" }], stream: false }),
+      signal: AbortSignal.timeout(90_000),
+    });
+    if (res.status === 429) {
+      // Per-agent quota hit — the tier is alive, probes themselves overran it.
+      return "429 quota exhausted (tier alive)";
+    }
+    if (res.status !== 200) throw failureExpect(`expected 200, got ${res.status}`);
+    const body = await res.json().catch(() => null);
+    if (body?.model !== "nvidia/gpt-oss-20b") throw failureExpect(`model: ${body?.model}`);
+    const content = body?.choices?.[0]?.message?.content;
+    if (typeof content !== "string" || content.length === 0) throw failureExpect("empty content");
+    if (body?.usage && typeof body.usage.total_tokens !== "number") throw failureExpect("bad usage block");
+    const remaining = res.headers.get("x-ratelimit-remaining-day");
+    return `content ${content.length} chars, remaining-day ${remaining ?? "?"}`;
+  });
 }
 
 if (!PROBE_ONLY) {
