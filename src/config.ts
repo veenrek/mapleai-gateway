@@ -75,6 +75,20 @@ export const config = {
   prepaidIssuerUrl: process.env.PREPAID_ISSUER_URL ?? "http://127.0.0.1:4031/api/internal/prepaid-codes",
   prepaidIssuerToken: process.env.PREPAID_ISSUER_TOKEN,
 
+  /**
+   * Per-model upstream override: models listed in COMBO_UPSTREAM_MODELS are
+   * served through the admin combo router at COMBO_UPSTREAM_BASE_URL with a
+   * dedicated internal prepaid key instead of the direct upstream —
+   * the combo fans out across several provider credentials, so a single
+   * upstream blackout (gpt-6-luna, 2026-09-29) no longer knocks the model out.
+   */
+  comboUpstreamBaseUrl: (process.env.COMBO_UPSTREAM_BASE_URL ?? "http://127.0.0.1:4031/api/v1").replace(/\/$/, ""),
+  internalComboKey: process.env.X402_INTERNAL_LUNA_KEY,
+  comboUpstreamModels: (process.env.COMBO_UPSTREAM_MODELS ?? "")
+    .split(",")
+    .map((m) => m.trim())
+    .filter((m) => m.length > 0),
+
   modelPrices: parseModelPrices(process.env.MODEL_PRICES),
   modelMapping: parseModelMapping(process.env.MODEL_MAPPING),
   /** Fallback flat price per request for models not listed in MODEL_PRICES */
