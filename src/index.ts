@@ -1243,6 +1243,26 @@ app.get("/service-endpoints.json", (req: Request, res: Response) => {
     });
   }
 
+  if (freeGptOssEnabled) {
+    endpoints.push(
+      {
+        method: "POST",
+        path: "/v1/free/chat/completions",
+        access: "free",
+        description: `Free ${freeGptOssModel} chat completions, rate-limited ${config.freeGptOssPer10Min}/10min and ${config.freeGptOssPerDay}/day per agent IP, max_tokens capped at ${config.freeGptOssMaxTokens}`,
+        pricing: { kind: "free", usd: 0, quota: { per10Min: config.freeGptOssPer10Min, perDay: config.freeGptOssPerDay } },
+        example: { messages: [{ role: "user", content: "Hello" }], stream: false },
+      },
+      {
+        method: "GET",
+        path: "/v1/free/chat/completions/quota",
+        access: "free",
+        description: "Current free-tier window usage for the caller IP",
+        pricing: { kind: "free", usd: 0 },
+      },
+    );
+  }
+
   if (imagesEnabled) {
     const imagePricing = Object.entries(imageRates).flatMap(([model, sizes]) =>
       Object.entries(sizes).map(([size, usd]) => ({ model, size, usdPerImage: usd })),
@@ -1858,6 +1878,70 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
                 content: { "application/json": { schema: embeddingValidationErrorSchema } },
               },
               "502": { description: "NVIDIA upstream failed" },
+            },
+          },
+        },
+      } : {}),
+      ...(freeGptOssEnabled ? {
+        "/v1/free/chat/completions": {
+          post: {
+            summary: "Free gpt-oss-20b chat completions",
+            operationId: "freeGptOssChat",
+            security: [],
+            "x-worked-example": workedExample("POST", "/v1/free/chat/completions", { messages: [{ role: "user", content: "Hello" }], stream: false }, false),
+            description:
+              `Free ${freeGptOssModel} chat via the same OpenAI Chat Completions shape as the paid endpoint. ` +
+              `No payment and no key. Rate-limited per agent IP: ${config.freeGptOssPer10Min} requests per 10 minutes ` +
+              `and ${config.freeGptOssPerDay} per day; max_tokens is capped at ${config.freeGptOssMaxTokens}. ` +
+              "Exceeding the window returns HTTP 429 with a free_tier_exhausted code and a retry-after. " +
+              "Window usage: GET /v1/free/chat/completions/quota.",
+            requestBody: {
+              required: true,
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    required: ["messages"],
+                    properties: {
+                      model: { type: "string", description: `Optional; only ${freeGptOssModel} is accepted` },
+                      messages: { type: "array", minItems: 1, items: { type: "object", required: ["role", "content"], properties: { role: { type: "string" }, content: { type: "string" } } } },
+                      max_tokens: { type: "integer", maximum: config.freeGptOssMaxTokens },
+                      stream: { type: "boolean" },
+                    },
+                  },
+                  example: { messages: [{ role: "user", content: "Hello" }], stream: false },
+                },
+              },
+            },
+            responses: {
+              "200": {
+                description: "Chat completion object with model echoed as nvidia/gpt-oss-20b.",
+                content: { "application/json": { example: {
+                  id: "chatcmpl_free", object: "chat.completion", model: freeGptOssModel,
+                  choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: "Hello!" } }],
+                  usage: { prompt_tokens: 32, completion_tokens: 6, total_tokens: 38 },
+                } } },
+              },
+              "400": { description: "Invalid request body (wrong model or missing messages)" },
+              "429": { description: "Free tier window exhausted for this agent IP; retry-after included." },
+              "502": { description: "Upstream temporarily unavailable" },
+            },
+          },
+        },
+        "/v1/free/chat/completions/quota": {
+          get: {
+            summary: "Free tier window usage for the caller IP",
+            operationId: "freeGptOssQuota",
+            security: [],
+            responses: {
+              "200": {
+                description: "Current usage and limits for both windows.",
+                content: { "application/json": { example: {
+                  object: "free_quota", model: freeGptOssModel,
+                  per10Min: { limit: config.freeGptOssPer10Min, used: 0 },
+                  perDay: { limit: config.freeGptOssPerDay, used: 0 },
+                } } },
+              },
             },
           },
         },
