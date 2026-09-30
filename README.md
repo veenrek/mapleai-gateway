@@ -50,7 +50,7 @@ upstream failures inside the same paid request.
 
 ### Jev structured decisions
 
-`POST /jev` — `jev-latest`, $0.12 per 1M input tokens, output free. SystemOne
+`POST /jev` — `jev-latest`, $0.06 per 1M input tokens, output free. SystemOne
 protocol: send `model`, `state` and named `questions` (`noul`, `choice` or
 `score` with `instructions`), read `answers` from the response.
 

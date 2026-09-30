@@ -11,7 +11,7 @@ OpenAI-compatible LLM endpoints that charge per request in USDC via the [x402](h
 | GPT chat completions | `POST {sol,base,polygon,arc}.mapleai.shop/v1/chat/completions` | from $0.001 USDC/request |
 | Responses API | `POST /v1/responses` | same |
 | Image generation / edit (gpt-image-2) | `POST /api/v1/images/generations` `…/image2image` | $0.02/image |
-| Jev structured decisions | `POST /jev` | $0.12/1M input tokens |
+| Jev structured decisions | `POST /jev` | $0.06/1M input tokens |
 | Prepaid API key purchase (agent self-onboarding) | `POST /prepaid/codes/auto` | from $0.007 USDC |
 
 Networks: Solana, Base, Polygon, Arc — USDC, self-custodial. Facilitators: CDP (Solana/Base/Polygon), local (Arc).
