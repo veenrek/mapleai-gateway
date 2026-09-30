@@ -365,6 +365,12 @@ for (const flag of activeDomains) {
     return "shape ok";
   });
 
+  await probe(`${flag} agents challenge`, async () => {
+    await checkChallenge(domain.origin + "/v1/agents/execute", domain,
+      { model: "agents/oss-20b", task: "Probe: reply with OK.", max_steps: 2, tools: [] }, 10_000n);
+    return "shape ok";
+  });
+
   await probe(`${flag} tap challenge`, async () => {
     await checkChallenge(domain.origin + "/prepaid/codes/auto", domain, {}, 20_000n);
     return "shape ok";

@@ -21,6 +21,7 @@ import { paymentEventMiddleware } from "./payment-events.js";
 import { fetchUpstreamChat } from "./upstream.js";
 import { fetchImage, imageModels, imageRates, imagesEnabled, quoteImage, validateImage, type ImageKind, type ImageRequest } from "./images.js";
 import { fetchJev, jevEnabled, jevModel, jevPricePerMillion, quoteJev, recordJevData, validateJev } from "./jev.js";
+import { agentsExecuteEnabled, handleAgentsExecute, quoteAgentsExecute, validateAgentsExecute } from "./agents.js";
 import { freeGptOssEnabled, freeGptOssModel, freeQuotaSnapshot, handleFreeGptOssChat } from "./free-gptoss.js";
 import {
   embeddingModel,
@@ -325,6 +326,23 @@ const jevDiscovery = declareDiscoveryExtension({ input: jevExample, inputSchema:
   output: { example: { model: "jev-1.13.0", answers: { billing: { type: "noul", noul: 0.98 } },
     usage: { input_tokens: 282, output_tokens: 20 } } } });
 
+const agentsExample = { model: "agents/oss-20b", task: "What is the population of France divided by 7?", max_steps: 6 };
+const agentsDiscovery = declareDiscoveryExtension({
+  input: agentsExample,
+  inputSchema: { type: "object", required: ["task"], properties: {
+    model: { type: "string", enum: ["agents/oss-20b"], description: "Execution engine. More engines added over time." },
+    task: { type: "string", description: "Natural language task for the agent" },
+    context: { type: "string", description: "Additional data or constraints" },
+    max_steps: { type: "integer", minimum: 1, maximum: 20, default: 8, description: "Charged ceiling of reasoning/tool steps" },
+    tools: { type: "array", items: { type: "string", enum: ["calculator", "fetch_url"] }, description: "Allowed tools (defaults to both)" },
+  } },
+  bodyType: "json",
+  output: { example: { object: "agent.execution", model: "agents/oss-20b", status: "completed", steps_executed: 2,
+    steps: [{ n: 1, thought: "Need the population", action: "tool", tool_call: { name: "fetch_url", args: { url: "https://example.com/france" } }, tool_result: "68 million" }],
+    output: { result: "About 9.7 million", sources: [{ url: "https://example.com/france" }] },
+    usage: { input_tokens: 4100, output_tokens: 260, tools_invoked: 1, steps_executed: 2, cost_usd: 0, charge: { base_usd: 0.002, step_usd: 0.001, steps_charged_ceiling: 6 } } } },
+});
+
 if (embeddingsEnabled) app.post("/v1/embeddings", validateEmbedding);
 
 const PAID_ROUTES = {
@@ -352,6 +370,8 @@ const PAID_ROUTES = {
   } : {}),
   ...(jevEnabled ? { "POST /jev": paidRoute("Jev structured decisions via SystemOne, priced by input tokens",
     jevDiscovery, (context) => quoteJev(requestBody(context) as { state: unknown; questions: unknown }), false, false, ["AI", "classification", "structured", "decisions"]) } : {}),
+  ...(agentsExecuteEnabled ? { "POST /v1/agents/execute": paidRoute("Autonomous agent execution (multi-step reasoning + tools), base + per-step pricing",
+    agentsDiscovery, (context) => quoteAgentsExecute(requestBody(context) as Parameters<typeof quoteAgentsExecute>[0]), false, true, ["AI", "agents", "automation", "tools"]) } : {}),
   ...(prepaidCodesEnabled ? {
     "POST /prepaid/codes": paidRoute(
       "Buy a prepaid API code for one GPT model and a token budget",
@@ -389,6 +409,7 @@ if (imagesEnabled) {
   app.post("/api/v1/images/image2image", validateImage("edit"));
 }
 if (jevEnabled) app.post("/jev", validateJev);
+if (agentsExecuteEnabled) app.post("/v1/agents/execute", validateAgentsExecute);
 async function handlePrepaidCodePurchase(req: Request, res: Response): Promise<void> {
   try {
     const purchase = await issuePrepaidCode(
@@ -790,8 +811,7 @@ if (imagesEnabled) {
   app.post("/api/v1/images/image2image", (req, res) => { void handleImage(req, res, "edit"); });
 }
 
-if (jevEnabled) app.post("/jev", async (req, res) => {
-  const started = Date.now();
+if (jevEnabled) app.post("/jev", async (req, res) => {  const started = Date.now();
   const logEntry = {
     domain: req.get("host") ?? "unknown",
     request: { state: (req.body as { state?: unknown })?.state, questions: (req.body as { questions?: unknown })?.questions },
@@ -825,6 +845,10 @@ if (jevEnabled) app.post("/jev", async (req, res) => {
       failure: { source: "transport", reason: error instanceof Error ? error.name : "unknown" } });
     res.status(502).json({ error: { message: "Jev request failed", type: "upstream_error" } });
   }
+});
+
+if (agentsExecuteEnabled) app.post("/v1/agents/execute", async (req, res) => {
+  await handleAgentsExecute(req, res);
 });
 
 if (embeddingsEnabled) app.post("/v1/embeddings", async (req, res) => {
