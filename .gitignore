@@ -19,6 +19,7 @@ embedding-events.jsonl
 embedding-data.jsonl
 jev-data.jsonl
 free-oss-data.jsonl
+agents-data.jsonl
 nexocap/cfg/
 nexocap/
 tools/key-test.sh
