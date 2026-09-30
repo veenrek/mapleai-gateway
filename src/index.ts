@@ -237,8 +237,24 @@ const responsesDiscovery = declareDiscoveryExtension({
   },
 });
 
+const bazaarIconUrl = config.publicBaseUrl ? config.publicBaseUrl + "/favicon.ico" : undefined;
+
+/** Bazaar card metadata proven by Cluster Protocol: serviceName/tags/iconUrl next to info+schema. */
+function bazaarCard(discovery: ReturnType<typeof declareDiscoveryExtension>, tags: string[]) {
+  const inner = (discovery as { bazaar?: Record<string, unknown> }).bazaar ?? {};
+  return {
+    ...discovery,
+    bazaar: {
+      serviceName: config.serviceName,
+      ...(tags.length > 0 ? { tags } : {}),
+      ...(bazaarIconUrl ? { iconUrl: bazaarIconUrl } : {}),
+      ...inner,
+    },
+  };
+}
+
 /** Every paid route shares one pricing rule; only the discovery shape differs. */
-function paidRoute(description: string, discovery: ReturnType<typeof declareDiscoveryExtension>, price: DynamicPrice = quotedPrice, includeQuote = true, upfront = false) {
+function paidRoute(description: string, discovery: ReturnType<typeof declareDiscoveryExtension>, price: DynamicPrice = quotedPrice, includeQuote = true, upfront = false, tags: string[] = []) {
   return {
     accepts: {
       scheme: "exact",
@@ -253,12 +269,13 @@ function paidRoute(description: string, discovery: ReturnType<typeof declareDisc
     },
     description,
     mimeType: "application/json",
-    extensions: { ...(includeQuote ? { quote: {} } : {}), ...discovery },
+    extensions: { ...(includeQuote ? { quote: {} } : {}), ...bazaarCard(discovery, tags) },
   };
 }
 
 const CHAT_DESCRIPTION =
   "OpenAI-compatible chat completion, priced by counted input tokens + max output tokens at per-model rates";
+const CHAT_TAGS = ["AI", "inference", "LLM", "chat"];
 
 const imageExampleModel = imageModels[0] ?? "gpt-image-2";
 const imageExampleSize = Object.keys(imageRates[imageExampleModel] ?? {})[0] ?? "1024x1024";
@@ -317,24 +334,24 @@ const PAID_ROUTES = {
       input: { contractAddress: nftExampleAddress },
       inputSchema: { type: "object", required: ["contractAddress"], properties: { contractAddress: { type: "string", pattern: "^0x[0-9a-fA-F]{40}$" } } },
       output: { example: { object: "nft_contract_metadata", chainNetwork: network, contractAddress: nftExampleAddress, name: "BoredApeYachtClub", symbol: "BAYC", tokenType: "ERC721" } },
-    }), async () => nftPrice, false),
+    }), async () => nftPrice, false, false, ["NFT", "metadata", "crypto"]),
   ])) : {}),
-  "POST /v1/chat/completions": paidRoute(CHAT_DESCRIPTION, chatDiscovery),
-  "POST /api/v1/chat/completions": paidRoute(CHAT_DESCRIPTION, chatDiscovery),
+  "POST /v1/chat/completions": paidRoute(CHAT_DESCRIPTION, chatDiscovery, quotedPrice, true, false, CHAT_TAGS),
+  "POST /api/v1/chat/completions": paidRoute(CHAT_DESCRIPTION, chatDiscovery, quotedPrice, true, false, CHAT_TAGS),
   "POST /api/v1/responses": paidRoute(
     "OpenAI-compatible Responses API (alpha), translated to chat completions upstream",
-    responsesDiscovery,
+    responsesDiscovery, quotedPrice, true, false, CHAT_TAGS,
   ),
   "POST /v1/responses": paidRoute(
     "OpenAI-compatible Responses API (alpha), translated to chat completions upstream",
-    responsesDiscovery,
+    responsesDiscovery, quotedPrice, true, false, CHAT_TAGS,
   ),
   ...(imagesEnabled ? {
-    "POST /api/v1/images/generations": paidRoute("Generate images, priced per image and size", imageDiscovery, (context) => quoteImage(requestBody(context)), false, true),
-    "POST /api/v1/images/image2image": paidRoute("Edit an image, priced per image and size", editDiscovery, (context) => quoteImage(requestBody(context)), false, true),
+    "POST /api/v1/images/generations": paidRoute("Generate images, priced per image and size", imageDiscovery, (context) => quoteImage(requestBody(context)), false, true, ["AI", "image", "generation"]),
+    "POST /api/v1/images/image2image": paidRoute("Edit an image, priced per image and size", editDiscovery, (context) => quoteImage(requestBody(context)), false, true, ["AI", "image", "editing"]),
   } : {}),
   ...(jevEnabled ? { "POST /jev": paidRoute("Jev structured decisions via SystemOne, priced by input tokens",
-    jevDiscovery, (context) => quoteJev(requestBody(context) as { state: unknown; questions: unknown }), false) } : {}),
+    jevDiscovery, (context) => quoteJev(requestBody(context) as { state: unknown; questions: unknown }), false, false, ["AI", "classification", "structured", "decisions"]) } : {}),
   ...(prepaidCodesEnabled ? {
     "POST /prepaid/codes": paidRoute(
       "Buy a prepaid API code for one GPT model and a token budget",
@@ -346,6 +363,8 @@ const PAID_ROUTES = {
       }),
       (context) => quotePrepaidCode(requestBody(context) as { model: string; tokens: number }),
       false,
+      false,
+      ["AI", "prepaid", "credits"],
     ),
     "POST /prepaid/codes/auto": paidRoute(
       "One-shot prepaid tap: empty body buys a 100000-token openai/gpt-6-luna key",
@@ -357,6 +376,8 @@ const PAID_ROUTES = {
       }),
       (context) => quotePrepaidCode(normalizeAutoPurchase(requestBody(context))),
       false,
+      false,
+      ["AI", "prepaid", "credits"],
     ),
   } : {}),
 };
