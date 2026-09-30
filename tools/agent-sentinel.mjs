@@ -14,6 +14,8 @@
 //   --domains sol,base            limit mirrors (default all)
 
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import crypto from "node:crypto";
+import { createPrivateKey, sign } from "node:crypto";
 import path from "node:path";
 import { x402Client } from "@x402/core/client";
 import { registerExactEvmScheme } from "@x402/evm/exact/client";
@@ -549,6 +551,80 @@ if (!PROBE_ONLY) {
     saveState(bazaarState);
   } else {
     console.log("info bazaar parity already ran today");
+  }
+}
+
+// -- PayAI facilitator economics (twice daily) -----------------------------
+// The payai rate card floats with on-chain gas (refreshed daily, gas+30%),
+// and free credits are per-wallet lifetime. Both shocks are silent: reprice
+// only in our FACILITATOR_FEE_USD env, and top up before the balance dies.
+{
+  const payaiState = loadState();
+  const now = new Date();
+  const bucket = now.toISOString().slice(0, 13) + (now.getUTCHours() < 12 ? "a" : "p");
+  if (payaiState.lastPayaiCheck !== bucket) {
+    await probe("payai rate card vs our overhead", async () => {
+      const res = await fetch("https://facilitator.payai.network/pricing", { signal: AbortSignal.timeout(15_000) });
+      if (res.status !== 200) throw failureExpect(`pricing ${res.status}`);
+      const table = await res.json();
+      const networks = { sol: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", base: "eip155:8453", polygon: "eip155:137" };
+      const issues = [];
+      const readings = [];
+      for (const [flag, network] of Object.entries(networks)) {
+        const rates = (table.rates ?? []).filter((r) => r?.network === network && r?.scheme === "exact");
+        const values = rates.map((r) => Number(r.usd)).filter(Number.isFinite);
+        const theirUsd = values.length > 0 ? Math.max(...values) : NaN;
+        if (!Number.isFinite(theirUsd)) continue;
+        let ours = NaN;
+        try {
+          const envText = readFileSync(`/opt/claude-api-${flag}/.env`, "utf8");
+          ours = Number(/^FACILITATOR_FEE_USD=(\S+)/m.exec(envText)?.[1]);
+        } catch { /* not running on the VDS */ }
+        readings.push(`${flag} rate=${theirUsd} ours=${Number.isFinite(ours) ? ours : "?"}`);
+        if (Number.isFinite(ours) && ours < theirUsd * 1.05) {
+          issues.push(`${flag}: overhead ${ours} < rate ${theirUsd} (+5%) — bump FACILITATOR_FEE_USD`);
+        }
+      }
+      if (readings.length === 0) throw failureExpect("no rates parsed from payai pricing");
+      if (issues.length > 0) throw failureExpect(issues.join("; "));
+      return readings.join(", ");
+    });
+
+    const keyId = process.env.PAYAI_API_KEY_ID;
+    const keySecret = process.env.PAYAI_API_KEY_SECRET;
+    if (!keyId || !keySecret) {
+      notes.push("payai credits balance check inactive — set PAYAI_API_KEY_ID/PAYAI_API_KEY_SECRET in sentinel.env");
+    } else {
+      await probe("payai credits balance", async () => {
+        const der = Buffer.from(keySecret.replace(/^payai_sk_/, ""), "base64");
+        const privKey = createPrivateKey({ key: der, format: "der", type: "pkcs8" });
+        const b64u = (obj) => Buffer.from(JSON.stringify(obj)).toString("base64url");
+        const ts = Math.floor(Date.now() / 1000);
+        const jwtData = b64u({ alg: "EdDSA", typ: "JWT", kid: keyId }) + "." +
+          b64u({ sub: keyId, iss: "payai-merchant", iat: ts, exp: ts + 120, jti: crypto.randomUUID() });
+        const jwt = jwtData + "." + sign(null, Buffer.from(jwtData), privKey).toString("base64url");
+        const res = await fetch("https://merchant.payai.network/api/v1/account", {
+          headers: { authorization: "Bearer " + jwt }, signal: AbortSignal.timeout(15_000),
+        });
+        if (res.status !== 200) throw failureExpect(`account ${res.status}`);
+        const account = await res.json().catch(() => null);
+        const candidates = [account?.credits?.balance, account?.credits?.remaining, account?.creditBalance, account?.balance, account?.credits]
+          .map(Number).filter(Number.isFinite);
+        if (candidates.length === 0) {
+          notes.push(`payai account shape not recognized: ${JSON.stringify(account)?.slice(0, 160)}`);
+          return "account ok, balance field unknown";
+        }
+        const remaining = Math.max(...candidates);
+        if (remaining < 1000) throw failureExpect(`payai credits low: ${remaining} — top up at merchant.payai.network`);
+        if (remaining < 2500) notes.push(`payai credits ${remaining} — plan a top-up`);
+        return `${remaining} credits`;
+      });
+    }
+
+    payaiState.lastPayaiCheck = bucket;
+    saveState(payaiState);
+  } else {
+    console.log("info payai economics already ran this half-day");
   }
 }
 
