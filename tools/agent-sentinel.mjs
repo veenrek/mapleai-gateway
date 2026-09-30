@@ -350,8 +350,10 @@ for (const flag of activeDomains) {
   });
 
   await probe(`${flag} chat challenge`, async () => {
+    // Polygon's facilitator overhead is ~2.5x base/sol (payai rate card), so its cap is wider.
+    const chatCap = flag === "polygon" ? 6_500n : 5_000n;
     const { amount } = await checkChallenge(domain.origin + "/v1/chat/completions", domain,
-      { model: "openai/gpt-6-luna", messages: [{ role: "user", content: "OK?" }], max_tokens: 8 }, 5_000n);
+      { model: "openai/gpt-6-luna", messages: [{ role: "user", content: "OK?" }], max_tokens: 8 }, chatCap);
     return `amount ${amount} atoms`;
   });
 
