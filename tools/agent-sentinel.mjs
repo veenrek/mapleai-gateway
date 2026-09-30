@@ -440,6 +440,106 @@ if (!PROBE_ONLY) {
   }
 }
 
+// -- Bazaar parity with the x402 leaders (daily, free) --------------------
+// The x402scan UI renders whatever the market leaders put in their 402
+// bazaar extensions. If a new discovery field becomes common practice and
+// ours stays behind, the marketplace card quietly loses features — the same
+// miss that hid serviceName/tags/iconUrl until Cluster Protocol showed them.
+{
+  const bazaarState = loadState();
+  const today = new Date().toISOString().slice(0, 10);
+  if (bazaarState.lastBazaarRun !== today) {
+    const fetchScan = async () => {
+      const res = await fetch("https://www.x402scan.com/", { signal: AbortSignal.timeout(25_000) });
+      if (res.status !== 200) throw failureExpect(`x402scan homepage ${res.status}`);
+      return (await res.text()).replace(/\\"/g, '"');
+    };
+
+    await probe("x402scan listing", async () => {
+      const html = await fetchScan();
+      if (!html.includes("mapleai.shop")) {
+        throw failureExpect("mapleai.shop not indexed on x402scan — register resources at https://www.x402scan.com/resources/register");
+      }
+      return "indexed";
+    });
+
+    await probe("bazaar parity with x402 leaders", async () => {
+      const html = await fetchScan();
+      const leaders = new Map();
+      const re = /"origins":\[\{"id":"([^"]+)","origin":"(https?:\/\/[^"]+)"/g;
+      for (const m of html.matchAll(re)) {
+        const [, id, origin] = m;
+        if (origin.includes("mapleai.shop")) continue;
+        const ctx = html.slice(m.index + m[0].length, m.index + m[0].length + 1500);
+        const tx = Number(/"tx_count":(\d+)/.exec(ctx)?.[1] ?? 0);
+        const amt = Number(/"total_amount":(\d+)/.exec(ctx)?.[1] ?? 0);
+        const prev = leaders.get(origin);
+        if (!prev || prev.tx < tx) leaders.set(origin, { id, tx, amt });
+      }
+      const all = [...leaders.entries()];
+      const pick = new Map();
+      for (const e of all.sort((a, b) => b[1].tx - a[1].tx).slice(0, 4)) pick.set(e[0], e[1]);
+      for (const e of all.sort((a, b) => b[1].amt - a[1].amt).slice(0, 2)) pick.set(e[0], e[1]);
+      if (pick.size === 0) throw failureExpect("no leaders parsed from x402scan homepage");
+
+      const leaderKeys = new Set();
+      const skipped = [];
+      let matched = 0;
+      for (const [origin, meta] of [...pick].slice(0, 6)) {
+        try {
+          const page = await fetch(`https://www.x402scan.com/server/${meta.id}`, { signal: AbortSignal.timeout(25_000) });
+          if (page.status !== 200) { skipped.push(`${origin}: scan ${page.status}`); continue; }
+          const phtml = (await page.text()).replace(/\\"/g, '"');
+          const host = new URL(origin).host.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const paths = [...new Set(
+            [...phtml.matchAll(new RegExp(host + "(/[A-Za-z0-9/_-]{2,})", "g"))]
+              .map((m) => m[1])
+              .filter((p) => !/(favicon|icon|robots|sitemap|\.well-known|thumbnail)$/i.test(p)),
+          )].sort((a, b) => (/(^\/v1\/|^\/api\/)/.test(b) ? 1 : 0) - (/(^\/v1\/|^\/api\/)/.test(a) ? 1 : 0));
+          let got = false;
+          for (const path of paths.slice(0, 3)) {
+            const chall = await fetch(origin.replace(/\/+$/, "") + path, {
+              method: "POST", headers: { "content-type": "application/json" }, body: "{}",
+              signal: AbortSignal.timeout(20_000),
+            });
+            const hdr = chall.headers.get("payment-required");
+            // v1 servers put the challenge in the 402 body instead of the header.
+            const challenge = hdr
+              ? JSON.parse(Buffer.from(hdr, "base64").toString("utf8"))
+              : chall.status === 402
+                ? await chall.json().catch(() => null)
+                : null;
+            if (!challenge) continue;
+            const bazaar = challenge?.extensions?.bazaar;
+            if (!bazaar) { skipped.push(`${origin}: no bazaar ext`); got = true; matched++; break; }
+            for (const k of Object.keys(bazaar)) leaderKeys.add(k);
+            got = true; matched++;
+            break;
+          }
+          if (!got) skipped.push(`${origin}: no 402 among ${Math.min(paths.length, 3)} paths`);
+        } catch (e) { skipped.push(`${origin}: ${e.message}`); }
+      }
+      if (matched === 0) throw failureExpect(`no leader returned a 402 (${skipped.slice(0, 3).join(" | ") || "none tried"})`);
+
+      const ours = await checkChallenge(
+        DOMAINS[activeDomains[0]].origin + "/jev",
+        DOMAINS[activeDomains[0]],
+        { model: "jev-latest", state: "Sentinel check state.", questions: { billing: { type: "noul", instructions: "Is this about billing?" } } },
+        10_000n,
+      );
+      const ourKeys = new Set(Object.keys(ours.challenge?.extensions?.bazaar ?? {}));
+      const missing = [...leaderKeys].filter((k) => !ourKeys.has(k));
+      if (missing.length > 0) throw failureExpect(`x402 leaders use bazaar fields we lack: ${missing.join(", ")}`);
+      return `${matched}/${pick.size} leaders with 402, keys ${[...leaderKeys].join("/") || "none"}${skipped.length ? ` — skipped: ${skipped.slice(0, 3).join(" | ")}` : ""}`;
+    });
+
+    bazaarState.lastBazaarRun = today;
+    saveState(bazaarState);
+  } else {
+    console.log("info bazaar parity already ran today");
+  }
+}
+
 const summary = `${activeDomains.length} domains scanned${PROBE_ONLY ? " (probe-only)" : ""}.`;
 if (failures.length > 0) {
   await alert(`${failures.length} check(s) failing. ${summary}\n` + failures.slice(0, 8).join("\n"));
