@@ -456,11 +456,21 @@ if (!PROBE_ONLY) {
     };
 
     await probe("x402scan listing", async () => {
-      const html = await fetchScan();
-      if (!html.includes("mapleai.shop")) {
-        throw failureExpect("mapleai.shop not indexed on x402scan — register resources at https://www.x402scan.com/resources/register");
+      const res = await fetch(
+        "https://www.x402scan.com/api/trpc/public.origins.search?input=" +
+          encodeURIComponent('{"json":{"search":"mapleai"}}'),
+        { signal: AbortSignal.timeout(25_000) },
+      );
+      if (res.status !== 200) throw failureExpect(`origins.search ${res.status}`);
+      const origins = ((await res.json())?.result?.data?.json ?? []).map((o) => o?.origin ?? "");
+      const flags = ["sol", "base", "polygon", "arc"];
+      const missing = flags.filter((f) => !origins.includes(`https://${f}.mapleai.shop`));
+      if (missing.length === flags.length) {
+        throw failureExpect("no mapleai.shop origins on x402scan — check discovery doc or re-register");
       }
-      return "indexed";
+      const msg = `${flags.length - missing.length}/${flags.length} origins indexed`;
+      if (missing.length > 0) notes.push(`x402scan missing ${missing.join(", ")} — register at https://www.x402scan.com/resources/register`);
+      return msg;
     });
 
     await probe("bazaar parity with x402 leaders", async () => {
