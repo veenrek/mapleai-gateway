@@ -593,7 +593,42 @@ if (!PROBE_ONLY) {
     const keyId = process.env.PAYAI_API_KEY_ID;
     const keySecret = process.env.PAYAI_API_KEY_SECRET;
     if (!keyId || !keySecret) {
-      notes.push("payai credits balance check inactive — set PAYAI_API_KEY_ID/PAYAI_API_KEY_SECRET in sentinel.env");
+      // Keyless estimate: our own settled ledger × the live rate card.
+      // Baseline = what the merchant dashboard showed when last read by hand.
+      await probe("payai credits balance (estimated)", async () => {
+        const total = Number(process.env.PAYAI_CREDITS_TOTAL ?? 10000);
+        const usedAtBaseline = Number(process.env.PAYAI_CREDITS_USED ?? 6);
+        const baselineTs = process.env.PAYAI_BASELINE_TS ?? "2026-09-30T18:00:00Z";
+        const res = await fetch("https://facilitator.payai.network/pricing", { signal: AbortSignal.timeout(15_000) });
+        if (res.status !== 200) throw failureExpect(`pricing ${res.status}`);
+        const table = await res.json();
+        const rateFor = (network) => {
+          const values = (table.rates ?? []).filter((r) => r?.network === network && r?.scheme === "exact")
+            .map((r) => Number(r.usd)).filter(Number.isFinite);
+          return values.length > 0 ? Math.max(...values) / Number(table.creditUsd ?? 0.001) : NaN;
+        };
+        const netByFlag = { sol: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", base: "eip155:8453", polygon: "eip155:137" };
+        let usedAfter = 0;
+        const perFlag = [];
+        for (const [flag, network] of Object.entries(netByFlag)) {
+          const credits = rateFor(network);
+          if (!Number.isFinite(credits)) continue;
+          let settled = 0;
+          try {
+            for (const line of readFileSync(`/opt/claude-api-${flag}/payment-events.jsonl`, "utf8").split("\n")) {
+              if (!line.includes("\"kind\":\"settled\"")) continue;
+              try { if (JSON.parse(line).ts >= baselineTs) settled++; } catch { /* malformed line */ }
+            }
+          } catch { /* not on VDS */ }
+          usedAfter += settled * credits;
+          perFlag.push(`${flag} ${settled}×${credits.toFixed(2)}`);
+        }
+        const remaining = total - usedAtBaseline - usedAfter;
+        const est = `${Math.round(remaining)} credits (est., ${perFlag.join(", ")})`;
+        if (remaining < 1000) throw failureExpect(`payai credits ≈${Math.round(remaining)} — top up at merchant.payai.network`);
+        if (remaining < 2500) notes.push(`payai credits ≈${Math.round(remaining)} — plan a top-up`);
+        return est;
+      });
     } else {
       await probe("payai credits balance", async () => {
         const der = Buffer.from(keySecret.replace(/^payai_sk_/, ""), "base64");
