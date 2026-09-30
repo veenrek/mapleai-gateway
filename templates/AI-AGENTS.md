@@ -15,6 +15,7 @@
 
 {{AGENT_IMAGES}}
 {{AGENT_JEV}}
+{{AGENT_AGENTS}}
 {{AGENT_EMBEDDINGS}}
 {{AGENT_FREE_OSS}}
 {{AGENT_NFT}}
@@ -98,6 +99,7 @@ Free list of available models with pricing and context windows.
 
 {{AGENT_IMAGE_ENDPOINTS}}
 {{AGENT_JEV_ENDPOINT}}
+{{AGENT_AGENTS_ENDPOINT}}
 {{AGENT_FREE_OSS_ENDPOINT}}
 {{AGENT_PREPAID_ENDPOINT}}
 

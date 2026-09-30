@@ -1065,6 +1065,9 @@ app.get("/.well-known/x402", (req: Request, res: Response) => {
       ...(jevEnabled && jevPricePerMillion !== undefined ? [{ method: "POST", path: "/jev", description: "Jev structured decisions",
         price: chatPriceDisplay + " (" + "$" + jevPricePerMillion.toFixed(2) + "/1M input tokens)",
         tags: ["decision", "classification", "structured"], pricedBy: "input tokens plus payment overhead", exampleBody: jevExample }] : []),
+      ...(agentsExecuteEnabled ? [{ method: "POST", path: "/v1/agents/execute", description: "Autonomous agent execution (multi-step reasoning + tools)",
+        price: chatPriceDisplay + " + $0.002 base + $0.001/step ceiling",
+        tags: ["agents", "automation", "tools"], pricedBy: "settlement overhead + base fee + per-step price, charged at the max_steps ceiling", exampleBody: agentsExample }] : []),
       ...(prepaidCodesEnabled ? [{
         method: "POST",
         path: "/prepaid/codes",
@@ -2004,6 +2007,21 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
         } } }, "400": { description: "Invalid request" },
           "402": paidResponses["402"], "502": { description: "Upstream unavailable" } },
       } } } : {}),
+      ...(agentsExecuteEnabled ? { "/v1/agents/execute": { post: { summary: "Autonomous agent execution", operationId: "executeAgent",
+        description: "Sends a natural-language task to the agents/oss-20b engine: multi-step reasoning with calculator and fetch_url tools. Settlement overhead + $0.002 base + $0.001 per step, charged at the max_steps ceiling (default 8, maximum 20). Returns the agent.execution object with the full step trace, sources and usage.",
+        security: [{ x402: [] }],
+        "x-worked-example": workedExample("POST", "/v1/agents/execute", agentsExample, true),
+        "x-payment-info": { price: { mode: "dynamic", currency: "USD" }, protocols: [{ x402: {} }] },
+        "x-pricing": { unit: "USD per execution", input: 0.002, output: 0.001, note: "base + per step, max 20 steps" },
+        requestBody: { required: true, content: { "application/json": { example: agentsExample } } },
+        responses: { "200": { description: "agent.execution result", content: { "application/json": {
+          example: { object: "agent.execution", model: "agents/oss-20b", status: "completed", steps_executed: 2,
+            steps: [{ n: 1, thought: "Compute", action: "tool", tool_call: { name: "calculator", args: { expression: "0.12*340" } }, tool_result: "40.8" }],
+            output: { result: "40.8" },
+            usage: { input_tokens: 4603, output_tokens: 122, tools_invoked: 1, steps_executed: 2, cost_usd: 0 } },
+        } } }, "400": { description: "Invalid request" },
+          "402": paidResponses["402"], "502": { description: "Engine unavailable" } },
+      } } } : {}),
       "/v1/chat/completions": {
         post: {
           summary: "Create chat completion",
@@ -2140,6 +2158,7 @@ app.get("/llms.txt", (req: Request, res: Response) => {
         "  Edit a PNG, JPEG or WebP base64 data URI (paid; maximum 10 MB).",
       ] : []),
      ...(jevEnabled ? ["", "POST " + origin + "/jev", "  Jev structured decisions ($" + jevPricePerMillion?.toFixed(2) + "/1M input tokens plus payment overhead). Send model=jev-latest, state and named questions with type and instructions."] : []),
+      ...(agentsExecuteEnabled ? ["", "POST " + origin + "/v1/agents/execute", "  Autonomous agent execution: sends a natural-language task to the agents/oss-20b", "  engine, which reasons step by step and can use calculator and fetch_url tools.", "  Priced at settlement overhead + $0.002 base + $0.001 per step, charged at the", "  max_steps ceiling (default 8, max 20). Returns the full step trace, sources and usage."] : []),
       ...(embeddingsEnabled ? ["", "POST " + origin + "/v1/embeddings", "  Free NVIDIA embeddings with nvidia/nemotron-3-embed-1b."] : []),
       ...(freeGptOssEnabled ? [
         "",
@@ -2184,6 +2203,8 @@ app.get("/llms.txt", (req: Request, res: Response) => {
       ] : []),
       ...(jevEnabled ? ["## Jev", "", "- jev-latest: $" + jevPricePerMillion?.toFixed(2) + "/1M input tokens; output tokens free",
         "- SystemOne only. POST /jev with model, state and named questions; each question needs type (noul, choice or score) and instructions. Read answers from the response.", ""] : []),
+      ...(agentsExecuteEnabled ? ["## Agents", "", "- agents/oss-20b: $0.002 base + $0.001 per step (charged at the max_steps ceiling, default 8)",
+        "- POST /v1/agents/execute with model, task, optional context, max_steps (1-20) and tools (calculator, fetch_url). Answers include the full step trace, fetched sources and token usage.", ""] : []),
       "## Usage",
       "",
       `1. Make a request to ${baseUrl}/chat/completions without payment`,

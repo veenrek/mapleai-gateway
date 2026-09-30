@@ -16,6 +16,7 @@ import { chainInfo } from "./chain.js";
 import { imageRates, imagesEnabled } from "./images.js";
 import { embeddingModel, embeddingsEnabled } from "./embeddings.js";
 import { jevEnabled, jevModel, jevPricePerMillion } from "./jev.js";
+import { agentsExecuteEnabled } from "./agents.js";
 import { freeGptOssEnabled, freeGptOssModel } from "./free-gptoss.js";
 import { nftEnabled, nftNetworks } from "./nft.js";
 import { prepaidCodesEnabled, prepaidStatusUrl } from "./prepaid-codes.js";
@@ -216,6 +217,14 @@ export function docVars(origin: string): DocVars {
     AGENT_JEV: jevEnabled ? '## Jev\n\n- ' + jevModel + ': $' + jevPricePerMillion?.toFixed(2) +
       ' per 1M input tokens, output free, plus settlement overhead. POST ' + origin + '/jev uses SystemOne; send model, state and named questions, each with type and instructions. Read answers from the response.\n\n' : '',
     AGENT_JEV_ENDPOINT: jevEnabled ? '| POST | /jev | Jev SystemOne decisions |' : '',
+    AGENT_AGENTS: agentsExecuteEnabled ? '## Agents\n\n- agents/oss-20b: $0.002 base + $0.001 per step (charged at the max_steps ceiling, default 8), plus settlement overhead. POST ' + origin + '/v1/agents/execute with model, task, optional context, max_steps (1-20) and tools (calculator, fetch_url). The agent reasons step by step, runs allowed tools server-side, and returns the full step trace, fetched sources and token usage.\n\n' : '',
+    AGENT_AGENTS_ENDPOINT: agentsExecuteEnabled ? '| POST | /v1/agents/execute | Autonomous agent execution (oss-20b, tools) |' : '',
+    HOME_AGENTS_NAV: agentsExecuteEnabled ? '<a href="#agents">Agents</a>' : '',
+    HOME_AGENTS: agentsExecuteEnabled ? '<section id="agents"><h2>Agents</h2><p class="h2sub">Autonomous task execution with agents/oss-20b: multi-step reasoning plus calculator and fetch_url tools. $0.002 base + $0.001 per step, charged at the max_steps ceiling.</p><p><code>POST /v1/agents/execute</code> &nbsp; <a href="' + origin + '/developers#agents">Agents API guide</a></p></section>' : '',
+    DEVELOPER_AGENTS_NAV: agentsExecuteEnabled ? '<a href="#agents">Agents</a>' : '',
+    DEVELOPER_AGENTS: agentsExecuteEnabled ? '<section id="agents"><h2>Agents</h2><p class="muted">Autonomous task execution via <code>agents/oss-20b</code> (multi-step reasoning with tools). $0.002 base + $0.001 per step, charged at the <code>max_steps</code> ceiling (default 8, maximum 20), plus settlement overhead shown in the 402 challenge. Available tools: <code>calculator</code> (safe arithmetic) and <code>fetch_url</code> (public pages, up to 3 per task).</p>' +
+      '<div class="snippet"><div class="snippet-title">Execute a task</div><pre><code>POST ' + origin + '/v1/agents/execute\ncontent-type: application/json\n\n{"model":"agents/oss-20b","task":"What is 12% of 340?","max_steps":6,"tools":["calculator","fetch_url"]}</code></pre></div>' +
+      '<p class="muted">The response is an <code>agent.execution</code> object: <code>status</code> (completed | failed | max_steps_exhausted), the full <code>steps</code> trace (thought, tool_call, tool_result), <code>output.result</code> with fetched <code>sources</code>, and per-step plus total token <code>usage</code>.</p></section>' : '',
     AGENT_EMBEDDINGS: embeddingsEnabled ? '## Free Embeddings\n\n- ' + embeddingModel + ': free POST ' + origin + '/v1/embeddings; send input as a string or array of strings.\n\n' : '',
     AGENT_FREE_OSS: freeGptOssEnabled ? '## Free Chat (gpt-oss-20b)\n\n- ' + freeGptOssModel + ': free POST ' + origin + '/v1/free/chat/completions; no payment. Rate-limited ' + config.freeGptOssPer10Min + '/10min and ' + config.freeGptOssPerDay + '/day per agent IP; max_tokens capped at ' + config.freeGptOssMaxTokens + '. Check remaining window: GET ' + origin + '/v1/free/chat/completions/quota.\n\n' : '',
     AGENT_FREE_OSS_ENDPOINT: freeGptOssEnabled ? '| POST | /v1/free/chat/completions | Free gpt-oss-20b chat (quota-limited) |' : '',
