@@ -443,6 +443,35 @@ if (!PROBE_ONLY) {
         await probe(`${flag} paid settle ${modelId}`, () => paidChatSettle(DOMAINS[flag], modelId, walletRoot));
       }
     }
+    // -- Prepaid buyer keys consumption (daily, local admin DB) -----------
+    // A paying prober (e.g. lumiere 2026-10-01) may buy codes without using
+    // them. Watching tokens_used flip 0→>0 catches the wake-up the same day.
+    await probe("prepaid keys usage", async () => {
+      let Database;
+      try {
+        const { createRequire } = await import("node:module");
+        Database = createRequire("/opt/mapleai-admin/package.json")("better-sqlite3");
+      } catch { notes.push("prepaid usage: better-sqlite3 unavailable (not on VDS) — skipped"); return "skipped (off-VDS)"; }
+      const db = new Database("/var/lib/mapleai-admin/storage.sqlite", { readonly: true });
+      const keys = db.prepare(
+        "SELECT id, key_prefix, status, token_budget_total, tokens_used, tokens_reserved FROM marketplace_buyer_keys " +
+        "WHERE is_unlimited = 0 AND created_at >= date('now', '-7 days')",
+      ).all();
+      const prev = state.prepaidUsage ?? {};
+      const moved = [];
+      for (const k of keys) {
+        const used = Number(k.tokens_used ?? 0) + Number(k.tokens_reserved ?? 0);
+        if (used > 0 && (prev[k.id] ?? 0) === 0) {
+          moved.push(`${k.key_prefix}… used ${used}/${k.token_budget_total}`);
+        }
+        prev[k.id] = used;
+      }
+      state.prepaidUsage = prev;
+      const active = keys.filter((k) => Number(k.tokens_used ?? 0) > 0).length;
+      if (moved.length > 0) notes.push(`prepaid movement: ${moved.join("; ")}`);
+      return `${keys.length} keys (7d), ${active} with spend${moved.length ? ` — NEW: ${moved.join("; ")}` : ""}`;
+    });
+
     state.lastPaidRun = today;
     saveState(state);
   } else {
