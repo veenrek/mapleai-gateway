@@ -97,6 +97,14 @@ export function freeQuotaSnapshot(ip: string, now = Date.now()): { per10Min: { l
 
 const modelRewriteFrom = /"model":"[^"]*"/g;
 
+/** Canonical working request — catalog probers that POST an empty body get this
+ * back inside every 400, so the next attempt can succeed without reading docs. */
+const exampleBody = { model: freeGptOssModel, messages: [{ role: "user", content: "Hello" }], max_tokens: 32, stream: false };
+
+function validationError(message: string, extra?: Record<string, unknown>) {
+  return { error: { message, type: "invalid_request", example_body: exampleBody, docs: "/AI-AGENTS.md", ...extra } };
+}
+
 /** Free gpt-oss-20b chat — combo-routed across the NVIDIA account pool, rate-limited per agent. */
 export async function handleFreeGptOssChat(req: Request, res: Response): Promise<void> {
   const started = Date.now();
@@ -111,24 +119,21 @@ export async function handleFreeGptOssChat(req: Request, res: Response): Promise
   const body = req.body as Record<string, unknown> | undefined;
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     recordFreeOssData({ ...logReq(), status: 400, latencyMs: Date.now() - started, failure: { source: "validation", reason: "non_object_body" } });
-    res.status(400).json({ error: { message: "JSON body required", type: "invalid_request" } });
+    res.status(400).json(validationError("JSON body required"));
     return;
   }
   const requested = typeof body.model === "string" ? body.model : freeGptOssModel;
   if (requested !== freeGptOssModel && requested !== comboModel) {
     recordFreeOssData({ ...logReq(), status: 400, latencyMs: Date.now() - started, failure: { source: "validation", reason: "unsupported_model" } });
-    res.status(400).json({
-      error: {
-        message: `This free endpoint serves ${freeGptOssModel} only; see GET /v1/models for paid models.`,
-        type: "invalid_request",
-        details: { allowedModel: freeGptOssModel },
-      },
-    });
+    res.status(400).json(validationError(
+      `This free endpoint serves ${freeGptOssModel} only; see GET /v1/models for paid models.`,
+      { allowedModel: freeGptOssModel },
+    ));
     return;
   }
   if (!Array.isArray(body.messages) || body.messages.length === 0) {
     recordFreeOssData({ ...logReq(), status: 400, latencyMs: Date.now() - started, failure: { source: "validation", reason: "missing_messages" } });
-    res.status(400).json({ error: { message: "messages[] required", type: "invalid_request" } });
+    res.status(400).json(validationError("messages[] required — see example_body for a complete working request"));
     return;
   }
 
