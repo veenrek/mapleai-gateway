@@ -18,10 +18,13 @@ import { estimateOutputTokens, quotePrice, quoteBreakdown } from "./pricing.js";
 import { paymentOverheadUsd } from "./gas.js";
 import { actualCostUsd, extractPayer, parseUsage, parseUsageFromSse, recordUsage } from "./ledger.js";
 import { paymentEventMiddleware } from "./payment-events.js";
+import { prepaidBypassMiddleware } from "./prepaid-bypass.js";
 import { fetchUpstreamChat } from "./upstream.js";
 import { fetchImage, imageModels, imageRates, imagesEnabled, quoteImage, validateImage, type ImageKind, type ImageRequest } from "./images.js";
 import { fetchJev, jevEnabled, jevModel, jevPricePerMillion, quoteJev, recordJevData, validateJev } from "./jev.js";
-import { agentsExecuteEnabled, handleAgentsExecute, quoteAgentsExecute, validateAgentsExecute } from "./agents.js";
+import { fetchXSearch, quoteXSearch, validateXSearch, xSearchBasePriceUsd, xSearchEnabled, xSearchModel, xSearchPerResultUsd, xSearchWebPriceUsd } from "./xsearch.js";
+import { digestBaseUsd, digestMediaUsd, digestPerHandleUsd, factcheckBaseUsd, factcheckPerSourceUsd, handleXDigest, handleXFactcheck, handleXSentiment, quoteXDigest, quoteXFactcheck, quoteXSentiment, sentimentBaseUsd, sentimentPerDayUsd, sentimentPerExampleUsd, validateXDigest, validateXFactcheck, validateXSentiment } from "./xintel.js";
+import { agentsEnginePricing, agentsExecuteEnabled, codeExecEnabled, codeExecMaxPerTask, codeExecPerCallUsd, handleAgentsExecute, quoteAgentsExecute, validateAgentsExecute } from "./agents.js";
 import { freeGptOssEnabled, freeGptOssModel, freeQuotaSnapshot, handleFreeGptOssChat } from "./free-gptoss.js";
 import {
   embeddingModel,
@@ -34,6 +37,22 @@ import {
   validateEmbedding,
 } from "./embeddings.js";
 import { embeddingStats, recordEmbeddingData, trackEmbeddingRequest } from "./embedding-stats.js";
+import {
+  fetchSpeech,
+  fetchTranscription,
+  quoteSpeech,
+  quoteTranscription,
+  speechEnabled,
+  speechModels,
+  speechPriceUsd,
+  transcriptionModels,
+  transcriptionPriceUsd,
+  transcriptionsEnabled,
+  validateSpeech,
+  validateTranscription,
+  type SpeechRequest,
+  type TranscriptionRequest,
+} from "./audio.js";
 import {
   issuePrepaidCode,
   normalizeAutoPurchase,
@@ -76,6 +95,9 @@ app.use((req, res, next) => {
   });
 });
 app.use(paymentEventMiddleware);
+// Prepaid buyer keys (Bearer oms_buy_*) are forwarded to the admin prepaid API
+// before the x402 paywall; requests without such a key continue as pay-per-request.
+app.use(prepaidBypassMiddleware);
 
 // ---------------------------------------------------------------------------
 // x402 resource server
@@ -177,7 +199,9 @@ resourceServer.registerExtension({
   },
 });
 
+const audioModelCount = () => (speechEnabled ? speechModels.length : 0) + (transcriptionsEnabled ? transcriptionModels.length : 0);
 const CATALOG_SUMMARY = () => `${catalog().length} GPT models, ${imageModels.length} image models` +
+  (audioModelCount() ? `, ${audioModelCount()} audio models` : "") +
   (jevEnabled ? ", Jev structured decisions" : "") + `; x402 on ${chain.networkName}`;
 
 const chatDiscovery = declareDiscoveryExtension({
@@ -255,7 +279,7 @@ function bazaarCard(discovery: ReturnType<typeof declareDiscoveryExtension>, tag
 }
 
 /** Every paid route shares one pricing rule; only the discovery shape differs. */
-function paidRoute(description: string, discovery: ReturnType<typeof declareDiscoveryExtension>, price: DynamicPrice = quotedPrice, includeQuote = true, upfront = false, tags: string[] = []) {
+function paidRoute(description: string, discovery: ReturnType<typeof declareDiscoveryExtension>, price: DynamicPrice = quotedPrice, includeQuote = true, upfront = false, tags: string[] = [], mimeType = "application/json") {
   return {
     accepts: {
       scheme: "exact",
@@ -269,7 +293,7 @@ function paidRoute(description: string, discovery: ReturnType<typeof declareDisc
       ...(upfront && config.network.startsWith("solana:") ? { extra: { paymentFlow: "upfront" } } : {}),
     },
     description,
-    mimeType: "application/json",
+    mimeType,
     extensions: { ...(includeQuote ? { quote: {} } : {}), ...bazaarCard(discovery, tags) },
   };
 }
@@ -326,21 +350,101 @@ const jevDiscovery = declareDiscoveryExtension({ input: jevExample, inputSchema:
   output: { example: { model: "jev-1.13.0", answers: { billing: { type: "noul", noul: 0.98 } },
     usage: { input_tokens: 282, output_tokens: 20 } } } });
 
+const xSearchDiscovery = declareDiscoveryExtension({
+  input: { query: "new x402 facilitator launches this week", max_results: 10 },
+  inputSchema: { type: "object", required: ["query"], properties: {
+    query: { type: "string", description: "What to look for on X/Twitter, 1-2000 characters" },
+    max_results: { type: "integer", minimum: 1, maximum: 25, default: 10, description: "Maximum posts cited" },
+    include_web: { type: "boolean", default: false, description: "Also run a web search alongside X" },
+    instructions: { type: "string", description: "Optional extra instructions for the search agent" },
+  } },
+  bodyType: "json",
+  output: { example: { object: "response", output_text: "...", citations: ["https://x.com/user/status/123"],
+    usage: { input_tokens: 1200, output_tokens: 300 } } },
+});
+
+const xDigestExample = { handles: ["base", "jessepollak", "brian_armstrong"], hours_back: 24, max_posts_per_handle: 3 };
+const xDigestSchema = { type: "object", required: ["handles"], properties: {
+  handles: { type: "array", minItems: 1, maxItems: 20, items: { type: "string", pattern: "^@?[A-Za-z0-9_]{1,15}$" }, description: "X handles to monitor (with or without @)" },
+  hours_back: { type: "integer", minimum: 1, maximum: 168, default: 24, description: "Look-back window in hours" },
+  max_posts_per_handle: { type: "integer", minimum: 1, maximum: 5, default: 3 },
+  include_media: { type: "boolean", default: false, description: "Also analyze images inside the fetched posts" },
+} };
+const xDigestDiscovery = declareDiscoveryExtension({
+  input: xDigestExample, inputSchema: xDigestSchema, bodyType: "json",
+  output: { example: { object: "x.digest", window_hours: 24,
+    handles: [{ handle: "base", silent: false, themes: ["gas upgrade"], posts: [{ url: "https://x.com/base/status/123", summary: "...", likes: 4200, reposts: 890 }] }] } },
+});
+
+const xSentimentExample = { topic: "x402 protocol", hours_back: 24, max_examples: 5, min_engagement: 10 };
+const xSentimentSchema = { type: "object", required: ["topic"], properties: {
+  topic: { type: "string", maxLength: 200, description: "Token, project or narrative to assess" },
+  hours_back: { type: "integer", minimum: 1, maximum: 168, default: 24 },
+  max_examples: { type: "integer", minimum: 1, maximum: 10, default: 5, description: "Evidence posts in the answer; drives the price" },
+  min_engagement: { type: "integer", minimum: 0, default: 0, description: "When > 0, keyword searches use min_faves:N to skip low-engagement noise" },
+} };
+const xSentimentDiscovery = declareDiscoveryExtension({
+  input: xSentimentExample, inputSchema: xSentimentSchema, bodyType: "json",
+  output: { example: { object: "x.sentiment", topic: "x402 protocol", verdict: "bullish", score: 0.6,
+    distribution: { bullish: 14, bearish: 3, neutral: 5 }, posts_evaluated: 22, drivers: ["agent payments momentum"],
+    examples: [{ url: "https://x.com/user/status/123", stance: "bullish", snippet: "...", likes: 420 }] } },
+});
+
+const xFactcheckExample = { claim: "Tether is bringing USDT back to the Bitcoin network", max_sources: 6, days_back: 7 };
+const xFactcheckSchema = { type: "object", required: ["claim"], properties: {
+  claim: { type: "string", maxLength: 1000, description: "The statement to verify" },
+  max_sources: { type: "integer", minimum: 1, maximum: 10, default: 6, description: "Max evidence items per side; drives the price" },
+  days_back: { type: "integer", minimum: 1, maximum: 30, default: 7, description: "How far back to look" },
+} };
+const xFactcheckDiscovery = declareDiscoveryExtension({
+  input: xFactcheckExample, inputSchema: xFactcheckSchema, bodyType: "json",
+  output: { example: { object: "x.factcheck", claim: "...", verdict: "confirmed", confidence: "high", summary: "...",
+    evidence_for: [{ url: "https://x.com/user/status/123", source_type: "x", note: "..." }], evidence_against: [] } },
+});
+
+const speechExample = { model: speechModels[0] ?? "tts-1", input: "Hello from MapleAI", voice: "alloy", response_format: "wav" };
+const speechDiscovery = declareDiscoveryExtension({
+  input: speechExample,
+  inputSchema: { type: "object", required: ["model", "input"], properties: {
+    model: { type: "string", enum: speechModels, description: "tts-1 = fast Gemini Flash-Lite, tts-1-hd = fuller Gemini Flash, orpheus-english/orpheus-arabic = emotive Groq Orpheus (en voices autumn/diana/hannah/austin/daniel/troy, ar voices fahad/sultan/noura/lulwa/aisha/abdullah; emotion tags like [laughs] supported)" },
+    input: { type: "string", description: "Text to synthesize, 1-5000 characters" },
+    voice: { type: "string", description: "Voice preset (alloy, echo, fable, onyx, nova, shimmer…) or a Gemini voice name; default alloy" },
+    response_format: { type: "string", enum: ["wav"], default: "wav" },
+    speed: { type: "number", minimum: 0.25, maximum: 4 },
+  } },
+  bodyType: "json",
+  output: { example: { audio: "binary WAV stream (audio/wav)", format: "RIFF/WAVE 24 kHz mono" } },
+});
+
+const transcriptionDiscovery = declareDiscoveryExtension({
+  input: { model: "whisper-1", file: "data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA", response_format: "json" },
+  inputSchema: { type: "object", required: ["file"], properties: {
+    model: { type: "string", enum: transcriptionModels, default: "whisper-1" },
+    file: { type: "string", description: "Audio (mp3, wav, m4a, ogg, flac, webm) as base64 or data URI, max 25 MB; multipart/form-data with a file field works too" },
+    language: { type: "string", description: "Optional ISO 639-1 hint" },
+    response_format: { type: "string", enum: ["json", "text", "verbose_json", "srt", "vtt"], default: "json", description: "verbose_json (word timestamps) / srt / vtt require whisper-large-v3 or whisper-large-v3-turbo (groq backend)" },
+  } },
+  bodyType: "json",
+  output: { example: { text: "Hello from MapleAI" } },
+});
+
 const agentsExample = { model: "agents/oss-20b", task: "What is the population of France divided by 7?", max_steps: 6 };
 const agentsDiscovery = declareDiscoveryExtension({
   input: agentsExample,
   inputSchema: { type: "object", required: ["task"], properties: {
-    model: { type: "string", enum: ["agents/oss-20b"], description: "Execution engine. More engines added over time." },
+    model: { type: "string", enum: ["agents/oss-20b", "agents/gpt-6-sol"], description: "Execution engine: cheap oss-20b or premium gpt-6-sol" },
     task: { type: "string", description: "Natural language task for the agent" },
     context: { type: "string", description: "Additional data or constraints" },
     max_steps: { type: "integer", minimum: 1, maximum: 20, default: 8, description: "Charged ceiling of reasoning/tool steps" },
-    tools: { type: "array", items: { type: "string", enum: ["calculator", "fetch_url"] }, description: "Allowed tools (defaults to both)" },
+    tools: { type: "array", items: { type: "string", enum: codeExecEnabled ? ["calculator", "fetch_url", "web_search", "data_analysis", "code_exec"] : ["calculator", "fetch_url", "web_search", "data_analysis"] }, description: "Allowed tools, defaults to the enabled set" + (codeExecEnabled ? "; code_exec runs sandboxed python/javascript/typescript, $0.002 per call, max 3 per task" : "; code_exec disabled on this deployment") },
+    stream: { type: "boolean", default: false, description: "When true, send SSE events: open, step per completed step, done with the full payload" },
   } },
   bodyType: "json",
   output: { example: { object: "agent.execution", model: "agents/oss-20b", status: "completed", steps_executed: 2,
     steps: [{ n: 1, thought: "Need the population", action: "tool", tool_call: { name: "fetch_url", args: { url: "https://example.com/france" } }, tool_result: "68 million" }],
     output: { result: "About 9.7 million", sources: [{ url: "https://example.com/france" }] },
-    usage: { input_tokens: 4100, output_tokens: 260, tools_invoked: 1, steps_executed: 2, cost_usd: 0, charge: { base_usd: 0.002, step_usd: 0.001, steps_charged_ceiling: 6 } } } },
+    usage: { input_tokens: 4100, output_tokens: 260, tools_invoked: 1, steps_executed: 2, cost_usd: 0,
+      charge: { base_usd: 0.002, step_usd: 0.0005, steps_charged_ceiling: 6, charged_ceiling_usd: 0.005 } } } },
 });
 
 if (embeddingsEnabled) app.post("/v1/embeddings", validateEmbedding);
@@ -368,9 +472,23 @@ const PAID_ROUTES = {
     "POST /api/v1/images/generations": paidRoute("Generate images, priced per image and size", imageDiscovery, (context) => quoteImage(requestBody(context)), false, true, ["AI", "image", "generation"]),
     "POST /api/v1/images/image2image": paidRoute("Edit an image, priced per image and size", editDiscovery, (context) => quoteImage(requestBody(context)), false, true, ["AI", "image", "editing"]),
   } : {}),
+  ...(speechEnabled ? {
+    "POST /v1/audio/speech": paidRoute("Text-to-speech synthesis, priced per request", speechDiscovery, (context) => quoteSpeech(requestBody(context)), false, false, ["AI", "audio", "tts", "speech"], "audio/wav"),
+  } : {}),
+  ...(transcriptionsEnabled ? {
+    "POST /v1/audio/transcriptions": paidRoute("Audio transcription (speech-to-text), priced per request; multipart file upload or JSON base64", transcriptionDiscovery, (context) => quoteTranscription(requestBody(context)), false, false, ["AI", "audio", "stt", "transcription"]),
+  } : {}),
   ...(jevEnabled ? { "POST /jev": paidRoute("Jev structured decisions via SystemOne, priced by input tokens",
     jevDiscovery, (context) => quoteJev(requestBody(context) as { state: unknown; questions: unknown }), false, false, ["AI", "classification", "structured", "decisions"]) } : {}),
-  ...(agentsExecuteEnabled ? { "POST /v1/agents/execute": paidRoute("Autonomous agent execution (multi-step reasoning + tools), base + per-step pricing",
+  ...(xSearchEnabled ? { "POST /v1/x/search": paidRoute(`Live X/Twitter search via Grok x_search, summarized answer with direct post citations; $${xSearchBasePriceUsd} + $${xSearchPerResultUsd} per requested max_result (+$${xSearchWebPriceUsd} with include_web)`,
+    xSearchDiscovery, (context) => quoteXSearch(requestBody(context) as Parameters<typeof quoteXSearch>[0]), false, false, ["AI", "search", "x", "twitter", "social"]) } : {}),
+  ...(xSearchEnabled ? { "POST /v1/x/digest": paidRoute(`Digest of specific X handles over a look-back window: key posts with links and engagement, silent handles marked; $${digestBaseUsd} + $${digestPerHandleUsd} per handle`,
+    xDigestDiscovery, (context) => quoteXDigest(requestBody(context) as Parameters<typeof quoteXDigest>[0]), false, false, ["AI", "search", "x", "twitter", "digest", "monitoring"]) } : {}),
+  ...(xSearchEnabled ? { "POST /v1/x/sentiment": paidRoute("X sentiment for a token, project or narrative: verdict, score, distribution, drivers and evidence posts",
+    xSentimentDiscovery, (context) => quoteXSentiment(requestBody(context) as Parameters<typeof quoteXSentiment>[0]), false, false, ["AI", "search", "x", "twitter", "sentiment", "analytics"]) } : {}),
+  ...(xSearchEnabled ? { "POST /v1/x/factcheck": paidRoute("Factcheck a claim against X posts and web sources: verdict, confidence and evidence for/against",
+    xFactcheckDiscovery, (context) => quoteXFactcheck(requestBody(context) as Parameters<typeof quoteXFactcheck>[0]), false, false, ["AI", "search", "x", "twitter", "factcheck", "verification"]) } : {}),
+  ...(agentsExecuteEnabled ? { "POST /v1/agents/execute": paidRoute("Autonomous agent execution (multi-step reasoning + tools). Engines: cheap agents/oss-20b or premium agents/gpt-6-sol; stream=true streams SSE step events. Ceiling = engine base + max_steps x step" + (codeExecEnabled ? " + code_exec calls ($0.002 each, max 3 per task)" : "") + " (charged_ceiling_usd).",
     agentsDiscovery, (context) => quoteAgentsExecute(requestBody(context) as Parameters<typeof quoteAgentsExecute>[0]), false, true, ["AI", "agents", "automation", "tools"]) } : {}),
   ...(prepaidCodesEnabled ? {
     "POST /prepaid/codes": paidRoute(
@@ -408,7 +526,18 @@ if (imagesEnabled) {
   app.post("/api/v1/images/generations", validateImage("generation"));
   app.post("/api/v1/images/image2image", validateImage("edit"));
 }
+if (speechEnabled) app.post("/v1/audio/speech", validateSpeech);
+if (transcriptionsEnabled) {
+  const audioUpload = express.raw({ type: ["multipart/form-data"], limit: "25mb" });
+  app.post("/v1/audio/transcriptions", audioUpload, validateTranscription);
+}
 if (jevEnabled) app.post("/jev", validateJev);
+if (xSearchEnabled) app.post("/v1/x/search", validateXSearch);
+if (xSearchEnabled) {
+  app.post("/v1/x/digest", validateXDigest);
+  app.post("/v1/x/sentiment", validateXSentiment);
+  app.post("/v1/x/factcheck", validateXFactcheck);
+}
 if (agentsExecuteEnabled) app.post("/v1/agents/execute", validateAgentsExecute);
 async function handlePrepaidCodePurchase(req: Request, res: Response): Promise<void> {
   try {
@@ -426,6 +555,27 @@ async function handlePrepaidCodePurchase(req: Request, res: Response): Promise<v
       tokens: { total: purchase.tokens, remaining: purchase.tokens },
       api_base: "https://mapleai.shop/v1",
       status_url: prepaidStatusUrl,
+      usage: {
+        how_to: "Send the code as a Bearer token to the MapleAI prepaid endpoint. The code spends from its token budget; no per-request payment is needed.",
+        authorization: `Bearer ${purchase.code}`,
+        chat_endpoint: "POST https://mapleai.shop/v1/chat/completions",
+        model: purchase.model,
+        example: {
+          url: "https://mapleai.shop/v1/chat/completions",
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${purchase.code}`,
+          },
+          body: {
+            model: purchase.model,
+            messages: [{ role: "user", content: "Hello" }],
+            stream: false,
+          },
+        },
+        models_url: "https://mapleai.shop/v1/models",
+        docs_url: "https://mapleai.shop/AI-AGENTS.md",
+      },
     });
   } catch (error) {
     console.error("[prepaid-codes] issuance failed:", error instanceof Error ? error.message : "unknown");
@@ -811,6 +961,57 @@ if (imagesEnabled) {
   app.post("/api/v1/images/image2image", (req, res) => { void handleImage(req, res, "edit"); });
 }
 
+async function handleSpeech(req: Request, res: Response): Promise<void> {
+  const speech = res.locals.speechRequest as SpeechRequest;
+  try {
+    const result = await fetchSpeech(speech);
+    recordUsage({
+      ts: new Date().toISOString(),
+      model: speech.model,
+      payer: extractPayer(req.get("payment-signature")),
+      upstreamStatus: 200,
+      quotedUsd: await quoteSpeech(req.body ?? {}),
+    });
+    res.status(200)
+      .setHeader("content-type", result.contentType)
+      .setHeader("x-audio-upstream", result.upstream)
+      .setHeader("x-fallback-used", result.fellBack ? "1" : "0")
+      .send(result.audio);
+  } catch (error) {
+    const status = (error as { status?: number }).status;
+    console.error("[audio] speech failed:", error instanceof Error ? error.message : "unknown");
+    res.status(typeof status === "number" ? status : 502)
+      .json({ error: { message: "TTS request failed", type: "upstream_error" } });
+  }
+}
+
+async function handleTranscription(req: Request, res: Response): Promise<void> {
+  const transcription = res.locals.transcriptionRequest as TranscriptionRequest;
+  try {
+    const result = await fetchTranscription(transcription);
+    recordUsage({
+      ts: new Date().toISOString(),
+      model: transcription.model,
+      payer: extractPayer(req.get("payment-signature")),
+      upstreamStatus: 200,
+      quotedUsd: await quoteTranscription(req.body ?? {}),
+    });
+    res.status(200)
+      .setHeader("content-type", result.contentType)
+      .setHeader("x-audio-upstream", result.upstream)
+      .setHeader("x-fallback-used", result.fellBack ? "1" : "0")
+      .send(result.raw);
+  } catch (error) {
+    const status = (error as { status?: number }).status;
+    console.error("[audio] transcription failed:", error instanceof Error ? error.message : "unknown");
+    res.status(typeof status === "number" ? status : 502)
+      .json({ error: { message: "Transcription request failed", type: "upstream_error" } });
+  }
+}
+
+if (speechEnabled) app.post("/v1/audio/speech", (req, res) => { void handleSpeech(req, res); });
+if (transcriptionsEnabled) app.post("/v1/audio/transcriptions", (req, res) => { void handleTranscription(req, res); });
+
 if (jevEnabled) app.post("/jev", async (req, res) => {  const started = Date.now();
   const logEntry = {
     domain: req.get("host") ?? "unknown",
@@ -849,6 +1050,36 @@ if (jevEnabled) app.post("/jev", async (req, res) => {  const started = Date.now
 
 if (agentsExecuteEnabled) app.post("/v1/agents/execute", async (req, res) => {
   await handleAgentsExecute(req, res);
+});
+
+if (xSearchEnabled) {
+  app.post("/v1/x/digest", (req, res) => { void handleXDigest(req, res); });
+  app.post("/v1/x/sentiment", (req, res) => { void handleXSentiment(req, res); });
+  app.post("/v1/x/factcheck", (req, res) => { void handleXFactcheck(req, res); });
+}
+
+if (xSearchEnabled) app.post("/v1/x/search", async (req, res) => {
+  try {
+    const upstream = await fetchXSearch(req.body as Parameters<typeof fetchXSearch>[0]);
+    const raw = await upstream.text();
+    if (!upstream.ok) {
+      console.error("[xsearch] combo router HTTP " + upstream.status);
+      res.status(upstream.status).type("application/json").send(raw);
+      return;
+    }
+    let data: unknown;
+    try { data = JSON.parse(raw); } catch { data = undefined; }
+    if (!data || typeof data !== "object") {
+      res.status(502).json({ error: { message: "Unexpected search response", type: "upstream_error" } });
+      return;
+    }
+    recordUsage({ ts: new Date().toISOString(), model: xSearchModel,
+      payer: extractPayer(req.get("payment-signature")), upstreamStatus: upstream.status, quotedUsd: await quoteXSearch(req.body as Parameters<typeof quoteXSearch>[0]) });
+    res.status(200).json(data);
+  } catch (error) {
+    console.error("[xsearch] request failed:", error instanceof Error ? error.name : "unknown");
+    res.status(502).json({ error: { message: "X search request failed", type: "upstream_error" } });
+  }
 });
 
 if (embeddingsEnabled) app.post("/v1/embeddings", async (req, res) => {
@@ -966,7 +1197,15 @@ app.get("/v1/models", (req: Request, res: Response) => {
       free_tier: { per_10min_per_ip: config.freeGptOssPer10Min, per_day_per_ip: config.freeGptOssPerDay, max_output_tokens: config.freeGptOssMaxTokens },
     }] : []), ...(jevEnabled ? [{ id: jevModel, object: "model", created: 1700000000,
       owned_by: "jev", type: "structured_decision", protocols: { primary: "systemone", supported: ["systemone"] },
-      endpoint: "/jev", pricing: { input: jevPricePerMillion, output: 0, unit: "USD per 1M tokens" } }] : [])],
+      endpoint: "/jev", pricing: { input: jevPricePerMillion, output: 0, unit: "USD per 1M tokens" } }] : []),
+      ...(speechEnabled ? speechModels.map((id) => ({
+        id, object: "model", created: 1700000000, owned_by: "google", type: "audio-tts",
+        endpoint: "/v1/audio/speech", pricing: { per_request: speechPriceUsd, unit: "USD per request" },
+      })) : []),
+      ...(transcriptionsEnabled ? transcriptionModels.map((id) => ({
+        id, object: "model", created: 1700000000, owned_by: "google", type: "audio-stt",
+        endpoint: "/v1/audio/transcriptions", pricing: { per_request: transcriptionPriceUsd, unit: "USD per request" },
+      })) : [])],
     default_price_per_request: config.defaultPrice,
     pricing_unit: "USD per 1M tokens (input/output) or per request",
     minimum_charge_usd: config.minChargeUsd,
@@ -1061,13 +1300,31 @@ app.get("/.well-known/x402", (req: Request, res: Response) => {
         },
       ] : []),
       ...(embeddingsEnabled ? [{ method: "POST", path: "/v1/embeddings", description: "Free NVIDIA Nemotron embeddings (2048-dim)", price: "$0.00", tags: ["embeddings", "free"], pricedBy: "free", exampleBody: { input: "Hello", input_type: "query", encoding_format: "float" } }] : []),
+      ...(speechEnabled ? [{ method: "POST", path: "/v1/audio/speech", description: "Text-to-speech synthesis (OpenAI-compatible, WAV output)", price: "$" + speechPriceUsd.toFixed(4) + " per request", tags: ["audio", "tts", "speech"], pricedBy: "per request", exampleBody: speechExample }] : []),
+      ...(transcriptionsEnabled ? [{ method: "POST", path: "/v1/audio/transcriptions", description: "Audio transcription (speech-to-text, multipart or JSON base64)", price: "$" + transcriptionPriceUsd.toFixed(4) + " per request", tags: ["audio", "stt", "transcription"], pricedBy: "per request", exampleBody: { model: "whisper-1", file: "data:audio/mpeg;base64,..." } }] : []),
       ...(freeGptOssEnabled ? [{ method: "POST", path: "/v1/free/chat/completions", description: `Free nvidia/gpt-oss-20b chat (rate-limited ${config.freeGptOssPer10Min}/10min + ${config.freeGptOssPerDay}/day per agent)`, price: "$0.00", tags: ["chat", "free"], pricedBy: "free tier with per-agent quota", exampleBody: { model: "nvidia/gpt-oss-20b", messages: [{ role: "user", content: "Hello" }], stream: false } }] : []),
       ...(jevEnabled && jevPricePerMillion !== undefined ? [{ method: "POST", path: "/jev", description: "Jev structured decisions",
         price: chatPriceDisplay + " (" + "$" + jevPricePerMillion.toFixed(2) + "/1M input tokens)",
         tags: ["decision", "classification", "structured"], pricedBy: "input tokens plus payment overhead", exampleBody: jevExample }] : []),
-      ...(agentsExecuteEnabled ? [{ method: "POST", path: "/v1/agents/execute", description: "Autonomous agent execution (multi-step reasoning + tools)",
-        price: chatPriceDisplay + " + $0.002 base + $0.001/step ceiling",
-        tags: ["agents", "automation", "tools"], pricedBy: "settlement overhead + base fee + per-step price, charged at the max_steps ceiling", exampleBody: agentsExample }] : []),
+      ...(xSearchEnabled ? [{ method: "POST", path: "/v1/x/search", description: "Live X/Twitter search via Grok x_search: summarized answer with direct post citations; include_web adds a web search pass",
+        price: "$" + xSearchBasePriceUsd.toFixed(3) + " + $" + xSearchPerResultUsd.toFixed(4) + " per requested max_result (+$" + xSearchWebPriceUsd.toFixed(2) + " with include_web)",
+        tags: ["search", "x", "twitter", "social"], pricedBy: "base + per requested max_result + optional web surcharge, plus payment overhead",
+        exampleBody: { query: "trending AI agent frameworks", max_results: 10 } },
+      { method: "POST", path: "/v1/x/digest", description: "Digest of specific X handles: key posts with links and engagement per handle, silent handles marked",
+        price: "$" + digestBaseUsd.toFixed(3) + " + $" + digestPerHandleUsd.toFixed(3) + " per handle",
+        tags: ["search", "x", "twitter", "digest", "monitoring"], pricedBy: "base + per handle, plus payment overhead",
+        exampleBody: xDigestExample },
+      { method: "POST", path: "/v1/x/sentiment", description: "X sentiment for a token, project or narrative: verdict, score, distribution, drivers, evidence posts",
+        price: "$" + sentimentBaseUsd.toFixed(3) + " + $" + sentimentPerExampleUsd.toFixed(4) + " per example + $" + sentimentPerDayUsd.toFixed(3) + " per extra day of window",
+        tags: ["search", "x", "twitter", "sentiment", "analytics"], pricedBy: "base + per example + per extra window day, plus payment overhead",
+        exampleBody: xSentimentExample },
+      { method: "POST", path: "/v1/x/factcheck", description: "Factcheck a claim against X posts and web sources: verdict, confidence, evidence for and against",
+        price: "$" + factcheckBaseUsd.toFixed(3) + " + $" + factcheckPerSourceUsd.toFixed(3) + " per source slot",
+        tags: ["search", "x", "twitter", "factcheck", "verification"], pricedBy: "base + per evidence source slot, plus payment overhead",
+        exampleBody: xFactcheckExample }] : []),
+      ...(agentsExecuteEnabled ? [{ method: "POST", path: "/v1/agents/execute", description: "Autonomous agent execution (multi-step reasoning + tools" + (codeExecEnabled ? " incl. sandboxed code_exec" : "") + ", SSE step events with stream=true). Engines: agents/oss-20b (cheap), agents/gpt-6-sol (premium)",
+        price: chatPriceDisplay + " + engine base ($0.002/$0.004) + per-step ($0.0005/$0.004)" + (codeExecEnabled ? " + code_exec $0.002/call" : "") + " ceiling",
+        tags: ["agents", "automation", "tools"], pricedBy: "settlement overhead + engine base fee + per-step price" + (codeExecEnabled ? ", code_exec $0.002/call (max 3 per task)" : "") + ", charged at the max_steps ceiling", exampleBody: agentsExample }] : []),
       ...(prepaidCodesEnabled ? [{
         method: "POST",
         path: "/prepaid/codes",
@@ -1145,6 +1402,24 @@ app.get("/.well-known/agent-card.json", (req: Request, res: Response) => {
       `2048-dim embeddings via ${embeddingModel}; free, no payment, up to 128 strings per call.`,
       ["embeddings", "free", "search"],
       `POST ${origin}/v1/embeddings {"input":"Hello","input_type":"query"}`,
+    ));
+  }
+  if (speechEnabled) {
+    skills.push(skill(
+      "text-to-speech",
+      "Text-to-speech synthesis",
+      `OpenAI-compatible TTS (${speechModels.join(", ")}); WAV audio, $${speechPriceUsd.toFixed(4)} per request.`,
+      ["audio", "tts", "speech"],
+      `POST ${origin}/v1/audio/speech {"model":"${speechModels[0]}","input":"Hello","voice":"alloy"}`,
+    ));
+  }
+  if (transcriptionsEnabled) {
+    skills.push(skill(
+      "speech-to-text",
+      "Audio transcription",
+      `OpenAI-compatible transcription (whisper-1 id, Gemini backend); multipart file or JSON base64, $${transcriptionPriceUsd.toFixed(4)} per request.`,
+      ["audio", "stt", "transcription"],
+      `POST ${origin}/v1/audio/transcriptions -F file=@audio.mp3 -F model=whisper-1`,
     ));
   }
   if (freeGptOssEnabled) {
@@ -1311,6 +1586,28 @@ app.get("/service-endpoints.json", (req: Request, res: Response) => {
     );
   }
 
+  if (speechEnabled) {
+    endpoints.push({
+      method: "POST",
+      path: "/v1/audio/speech",
+      access: "x402",
+      description: "Text-to-speech synthesis (OpenAI-compatible), WAV output",
+      pricing: { kind: "per_request", usd: speechPriceUsd, models: speechModels, overheadUsd: config.minChargeUsd },
+      example: speechExample,
+    });
+  }
+
+  if (transcriptionsEnabled) {
+    endpoints.push({
+      method: "POST",
+      path: "/v1/audio/transcriptions",
+      access: "x402",
+      description: "Audio transcription (speech-to-text) via multipart upload or JSON base64 audio",
+      pricing: { kind: "per_request", usd: transcriptionPriceUsd, models: transcriptionModels, overheadUsd: config.minChargeUsd },
+      example: { model: "whisper-1", file: "data:audio/mpeg;base64,..." },
+    });
+  }
+
   if (imagesEnabled) {
     const imagePricing = Object.entries(imageRates).flatMap(([model, sizes]) =>
       Object.entries(sizes).map(([size, usd]) => ({ model, size, usdPerImage: usd })),
@@ -1343,6 +1640,63 @@ app.get("/service-endpoints.json", (req: Request, res: Response) => {
       description: "Jev structured decisions (SystemOne: state + named questions)",
       pricing: { kind: "per_million_input_tokens", usd: jevPricePerMillion, overheadUsd: config.minChargeUsd },
       example: jevExample,
+    });
+  }
+
+  if (xSearchEnabled) {
+    endpoints.push({
+      method: "POST",
+      path: "/v1/x/search",
+      access: "x402",
+      description: "Live X/Twitter search via Grok x_search: summarized answer with direct post citations; include_web adds a web search pass",
+      pricing: { kind: "formula", formula: "base + per_result * max_results (+web surcharge with include_web)",
+        baseUsd: xSearchBasePriceUsd, perResultUsd: xSearchPerResultUsd, webSurchargeUsd: xSearchWebPriceUsd, overheadUsd: config.minChargeUsd },
+      example: { query: "trending AI agent frameworks", max_results: 10 },
+    });
+    endpoints.push({
+      method: "POST",
+      path: "/v1/x/digest",
+      access: "x402",
+      description: "Digest of specific X handles over a look-back window: key posts with links and engagement, silent handles marked",
+      pricing: { kind: "formula", formula: "base + per_handle * handles (+media surcharge with include_media)",
+        baseUsd: digestBaseUsd, perHandleUsd: digestPerHandleUsd, mediaSurchargeUsd: digestMediaUsd, overheadUsd: config.minChargeUsd },
+      example: xDigestExample,
+    });
+    endpoints.push({
+      method: "POST",
+      path: "/v1/x/sentiment",
+      access: "x402",
+      description: "X sentiment for a token, project or narrative: verdict, -1..1 score, distribution, drivers, evidence posts",
+      pricing: { kind: "formula", formula: "base + per_example * max_examples + per_day * extra_window_days",
+        baseUsd: sentimentBaseUsd, perExampleUsd: sentimentPerExampleUsd, perDayUsd: sentimentPerDayUsd, overheadUsd: config.minChargeUsd },
+      example: xSentimentExample,
+    });
+    endpoints.push({
+      method: "POST",
+      path: "/v1/x/factcheck",
+      access: "x402",
+      description: "Factcheck a claim against X posts and web sources: verdict (confirmed/refuted/mixed/unverified), confidence, evidence",
+      pricing: { kind: "formula", formula: "base + per_source * max_sources",
+        baseUsd: factcheckBaseUsd, perSourceUsd: factcheckPerSourceUsd, overheadUsd: config.minChargeUsd },
+      example: xFactcheckExample,
+    });
+  }
+
+  if (agentsExecuteEnabled) {
+    endpoints.push({
+      method: "POST",
+      path: "/v1/agents/execute",
+      access: "x402",
+      description: "Autonomous agent execution (multi-step reasoning with calculator, fetch_url, web_search, data_analysis" +
+        (codeExecEnabled ? ", code_exec" : "") + " tools; stream=true streams SSE step events)",
+      pricing: {
+        kind: "ceiling",
+        formula: "engine base + max_steps * step" + (codeExecEnabled ? " + min(3, max_steps) * code_exec_fee" : "") + " + overhead",
+        engines: agentsEnginePricing(),
+        ...(codeExecEnabled ? { codeExecUsdPerCall: codeExecPerCallUsd, codeExecMaxPerTask } : {}),
+        overheadUsd: config.minChargeUsd,
+      },
+      example: agentsExample,
     });
   }
 
@@ -1804,6 +2158,43 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
           "x-payment-info": { price: { mode: "dynamic", currency: "USD" }, protocols: [{ x402: {} }] },
           "x-pricing": { unit: "USD per image", models: imageRates }, requestBody: imageBody(true), responses: imageResponse } },
       } : {}),
+      ...(speechEnabled ? {
+        "/v1/audio/speech": { post: { summary: "Text-to-speech synthesis", operationId: "createSpeech", security: [{ x402: [] }],
+          "x-worked-example": workedExample("POST", "/v1/audio/speech", speechExample, true),
+          "x-payment-info": { price: { mode: "fixed", amount: speechPriceUsd, currency: "USD" }, protocols: [{ x402: {} }] },
+          requestBody: { required: true, content: { "application/json": { example: speechExample, schema: {
+            type: "object", required: ["model", "input"],
+            properties: { model: { type: "string", enum: speechModels }, input: { type: "string", maxLength: 5000 },
+              voice: { type: "string", default: "alloy" }, response_format: { type: "string", enum: ["wav"], default: "wav" },
+              speed: { type: "number", minimum: 0.25, maximum: 4 } },
+          } } } },
+          responses: {
+            "200": { description: "Synthesized audio", content: { "audio/wav": { schema: { type: "string", format: "binary" } } } },
+            "400": { description: "Invalid speech request" },
+            "402": paidResponses["402"],
+            "502": { description: "TTS upstream failed" },
+          } } },
+      } : {}),
+      ...(transcriptionsEnabled ? {
+        "/v1/audio/transcriptions": { post: { summary: "Transcribe audio (speech-to-text)", operationId: "createTranscription", security: [{ x402: [] }],
+          "x-payment-info": { price: { mode: "fixed", amount: transcriptionPriceUsd, currency: "USD" }, protocols: [{ x402: {} }] },
+          requestBody: { required: true, content: {
+            "multipart/form-data": { schema: { type: "object", required: ["file"], properties: {
+              file: { type: "string", format: "binary", description: "Audio file (mp3, wav, m4a, ogg, flac, webm), max 25 MB" },
+              model: { type: "string", enum: transcriptionModels, default: "whisper-1" },
+              response_format: { type: "string", enum: ["json", "text", "verbose_json", "srt", "vtt"], default: "json" } } } },
+            "application/json": { schema: { type: "object", required: ["file"], properties: {
+              model: { type: "string", enum: transcriptionModels, default: "whisper-1" },
+              file: { type: "string", description: "Audio as base64 or data URI, max 25 MB" },
+              response_format: { type: "string", enum: ["json", "text", "verbose_json", "srt", "vtt"], default: "json" } } } },
+          } },
+          responses: {
+            "200": { description: "Transcript", content: { "application/json": { example: { text: "Hello from MapleAI" } } } },
+            "400": { description: "Invalid transcription request" },
+            "402": paidResponses["402"],
+            "502": { description: "Transcription upstream failed" },
+          } } },
+      } : {}),
       ...(prepaidCodesEnabled ? {
         "/prepaid/codes": {
           post: {
@@ -2007,12 +2398,69 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
         } } }, "400": { description: "Invalid request" },
           "402": paidResponses["402"], "502": { description: "Upstream unavailable" } },
       } } } : {}),
+      ...(xSearchEnabled ? { "/v1/x/search": { post: { summary: "Live X/Twitter search", operationId: "searchX",
+        description: "Server-side Grok x_search over X posts. Returns a Responses API object: output_text summarizes the findings with direct post links, citations collected as url_citation entries. include_web adds a web_search pass alongside X.",
+        security: [{ x402: [] }],
+        "x-worked-example": workedExample("POST", "/v1/x/search", { query: "trending AI agent frameworks", max_results: 10 }, true),
+        "x-payment-info": { price: { mode: "dynamic", currency: "USD" }, protocols: [{ x402: {} }] },
+        "x-pricing": { unit: "USD per query", formula: "base + per_result * max_results (+web surcharge with include_web)",
+          base: xSearchBasePriceUsd, perResult: xSearchPerResultUsd, webSurcharge: xSearchWebPriceUsd,
+          defaultTotal: xSearchBasePriceUsd + xSearchPerResultUsd * 10, note: "max_results defaults to 10, max 25" },
+        requestBody: { required: true, content: { "application/json": { example: { query: "trending AI agent frameworks", max_results: 10 },
+          schema: { type: "object", required: ["query"], properties: {
+            query: { type: "string", maxLength: 2000, description: "What to look for on X/Twitter" },
+            max_results: { type: "integer", minimum: 1, maximum: 25, default: 10, description: "Maximum posts cited; drives the price" },
+            include_web: { type: "boolean", default: false, description: "Also run web_search alongside X (adds the web surcharge)" },
+            instructions: { type: "string", description: "Optional extra instructions for the search agent (e.g. quote posts verbatim, include author/date/likes)" },
+          } } } } },
+        responses: { "200": { description: "Responses API object with the summary and citations", content: { "application/json": {
+          example: { object: "response", output_text: "AI agents are trending around x402 payments. https://x.com/user/status/123[[1]]",
+            citations: ["https://x.com/user/status/123"], usage: { input_tokens: 1200, output_tokens: 300 } } } } },
+          "400": { description: "Invalid request" },
+          "402": paidResponses["402"], "502": { description: "Search upstream unavailable" } },
+      } } } : {}),
+      ...(xSearchEnabled ? { "/v1/x/digest": { post: { summary: "Digest of specific X handles", operationId: "xDigest",
+        description: "Server-side Grok x_search restricted to the given handles (allowed_x_handles). Per handle: up to max_posts_per_handle key posts with links, likes and reposts, plus recurring themes; silent handles are marked. include_media enables image understanding inside posts (surcharge).",
+        security: [{ x402: [] }],
+        "x-worked-example": workedExample("POST", "/v1/x/digest", xDigestExample, true),
+        "x-payment-info": { price: { mode: "dynamic", currency: "USD" }, protocols: [{ x402: {} }] },
+        "x-pricing": { unit: "USD per digest", formula: "base + per_handle * handles (+media surcharge)",
+          base: digestBaseUsd, perHandle: digestPerHandleUsd, mediaSurcharge: digestMediaUsd, note: "1-20 handles" },
+        requestBody: { required: true, content: { "application/json": { example: xDigestExample, schema: xDigestSchema } } },
+        responses: { "200": { description: "Structured digest", content: { "application/json": { example: { object: "x.digest", handles: [{ handle: "base", silent: false, themes: ["gas upgrade"], posts: [{ url: "https://x.com/base/status/123", summary: "...", likes: 4200, reposts: 890 }] }] } } } },
+          "400": { description: "Invalid request" },
+          "402": paidResponses["402"], "502": { description: "Search upstream unavailable or invalid model response" } },
+      } } } : {}),
+      ...(xSearchEnabled ? { "/v1/x/sentiment": { post: { summary: "X sentiment for a topic", operationId: "xSentiment",
+        description: "Two x_search passes (Top + Latest) over the look-back window; every fetched post is classified bullish/bearish/neutral. score and distribution are model-estimated aggregates; low_sample is flagged when few posts were evaluated.",
+        security: [{ x402: [] }],
+        "x-worked-example": workedExample("POST", "/v1/x/sentiment", xSentimentExample, true),
+        "x-payment-info": { price: { mode: "dynamic", currency: "USD" }, protocols: [{ x402: {} }] },
+        "x-pricing": { unit: "USD per assessment", formula: "base + per_example * max_examples + per_day * extra_window_days",
+          base: sentimentBaseUsd, perExample: sentimentPerExampleUsd, perDay: sentimentPerDayUsd, note: "window default 24h, max 168h" },
+        requestBody: { required: true, content: { "application/json": { example: xSentimentExample, schema: xSentimentSchema } } },
+        responses: { "200": { description: "Structured sentiment", content: { "application/json": { example: { object: "x.sentiment", topic: "x402 protocol", verdict: "bullish", score: 0.6, distribution: { bullish: 14, bearish: 3, neutral: 5 }, posts_evaluated: 22, drivers: ["agent payments momentum"], examples: [{ url: "https://x.com/user/status/123", stance: "bullish", snippet: "...", likes: 420 }] } } } },
+          "400": { description: "Invalid request" },
+          "402": paidResponses["402"], "502": { description: "Search upstream unavailable or invalid model response" } },
+      } } } : {}),
+      ...(xSearchEnabled ? { "/v1/x/factcheck": { post: { summary: "Factcheck a claim (X + web)", operationId: "xFactcheck",
+        description: "Cross-checks a claim with server-side x_search (X posts) and web_search (press/official sources). verdict is confirmed|refuted|mixed|unverified; confidence is the model's self-assessment (low|medium|high).",
+        security: [{ x402: [] }],
+        "x-worked-example": workedExample("POST", "/v1/x/factcheck", xFactcheckExample, true),
+        "x-payment-info": { price: { mode: "dynamic", currency: "USD" }, protocols: [{ x402: {} }] },
+        "x-pricing": { unit: "USD per factcheck", formula: "base + per_source * max_sources",
+          base: factcheckBaseUsd, perSource: factcheckPerSourceUsd, note: "max_sources caps evidence items per side" },
+        requestBody: { required: true, content: { "application/json": { example: xFactcheckExample, schema: xFactcheckSchema } } },
+        responses: { "200": { description: "Structured factcheck", content: { "application/json": { example: { object: "x.factcheck", claim: "...", verdict: "confirmed", confidence: "high", summary: "...", evidence_for: [{ url: "https://x.com/user/status/123", source_type: "x", note: "..." }], evidence_against: [] } } } },
+          "400": { description: "Invalid request" },
+          "402": paidResponses["402"], "502": { description: "Search upstream unavailable or invalid model response" } },
+      } } } : {}),
       ...(agentsExecuteEnabled ? { "/v1/agents/execute": { post: { summary: "Autonomous agent execution", operationId: "executeAgent",
-        description: "Sends a natural-language task to the agents/oss-20b engine: multi-step reasoning with calculator and fetch_url tools. Settlement overhead + $0.002 base + $0.001 per step, charged at the max_steps ceiling (default 8, maximum 20). Returns the agent.execution object with the full step trace, sources and usage.",
+        description: "Sends a natural-language task to a multi-step agent engine (cheap agents/oss-20b or premium agents/gpt-6-sol) with calculator, fetch_url, web_search, data_analysis" + (codeExecEnabled ? " and sandboxed code_exec (python/javascript/typescript)" : "") + " tools. stream=true streams SSE step events (open, step, done). Charged at the max_steps ceiling: settlement overhead + engine base ($0.002 / $0.004) + per-step ($0.0005 / $0.004)" + (codeExecEnabled ? " + code_exec $0.002 per call (max 3 per task)" : "") + ", default 8, maximum 20 steps. Returns the agent.execution object with the full step trace, sources, usage and charged_ceiling_usd. Per-step timeouts finalize as partial instead of 502.",
         security: [{ x402: [] }],
         "x-worked-example": workedExample("POST", "/v1/agents/execute", agentsExample, true),
         "x-payment-info": { price: { mode: "dynamic", currency: "USD" }, protocols: [{ x402: {} }] },
-        "x-pricing": { unit: "USD per execution", input: 0.002, output: 0.001, note: "base + per step, max 20 steps" },
+        "x-pricing": { unit: "USD per execution", input: 0.002, output: 0.0005, premiumInput: 0.004, premiumOutput: 0.004, note: codeExecEnabled ? "engine base + per step, max 20 steps; code_exec $0.002/call, max 3 per task" : "engine base + per step, max 20 steps" },
         requestBody: { required: true, content: { "application/json": { example: agentsExample } } },
         responses: { "200": { description: "agent.execution result", content: { "application/json": {
           example: { object: "agent.execution", model: "agents/oss-20b", status: "completed", steps_executed: 2,
@@ -2157,8 +2605,27 @@ app.get("/llms.txt", (req: Request, res: Response) => {
         "POST " + origin + "/api/v1/images/image2image",
         "  Edit a PNG, JPEG or WebP base64 data URI (paid; maximum 10 MB).",
       ] : []),
+      ...(speechEnabled ? [
+        "",
+        "POST " + origin + "/v1/audio/speech",
+        "  Text-to-speech (paid; $" + speechPriceUsd.toFixed(3) + " per request): " + speechModels.join(", ") + ". WAV output.",
+      ] : []),
+      ...(transcriptionsEnabled ? [
+        "POST " + origin + "/v1/audio/transcriptions",
+        "  Speech-to-text (paid; $" + transcriptionPriceUsd.toFixed(3) + " per request): " + transcriptionModels.join(", ") +
+          ". Multipart or JSON base64 input; whisper-large-v3* add word timestamps and srt/vtt.",
+      ] : []),
      ...(jevEnabled ? ["", "POST " + origin + "/jev", "  Jev structured decisions ($" + jevPricePerMillion?.toFixed(2) + "/1M input tokens plus payment overhead). Send model=jev-latest, state and named questions with type and instructions."] : []),
-      ...(agentsExecuteEnabled ? ["", "POST " + origin + "/v1/agents/execute", "  Autonomous agent execution: sends a natural-language task to the agents/oss-20b", "  engine, which reasons step by step and can use calculator and fetch_url tools.", "  Priced at settlement overhead + $0.002 base + $0.001 per step, charged at the", "  max_steps ceiling (default 8, max 20). Returns the full step trace, sources and usage."] : []),
+      ...(xSearchEnabled ? ["", "POST " + origin + "/v1/x/search", "  Live X/Twitter search via Grok x_search. Price = $" + xSearchBasePriceUsd.toFixed(3) + " + $" + xSearchPerResultUsd.toFixed(4) + " per requested max_result (+$" + xSearchWebPriceUsd.toFixed(2) + " with include_web), plus payment overhead; $" + (xSearchBasePriceUsd + xSearchPerResultUsd * 10).toFixed(3) + " at the default 10 results. Body: {query, max_results?: 1..25, include_web?: bool, instructions?: string}. Returns the Grok answer with direct post citations."] : []),
+      ...(xSearchEnabled ? [
+        "POST " + origin + "/v1/x/digest",
+        "  Digest of specific X handles: key posts with links, likes and reposts per handle, silent handles marked. Price = $" + digestBaseUsd.toFixed(3) + " + $" + digestPerHandleUsd.toFixed(3) + " per handle. Body: {handles, hours_back?: 1..168, max_posts_per_handle?: 1..5, include_media?: bool}.",
+        "POST " + origin + "/v1/x/sentiment",
+        "  X sentiment for a topic: verdict, -1..1 score, bullish/bearish/neutral distribution, drivers and evidence posts. Price = $" + sentimentBaseUsd.toFixed(3) + " + $" + sentimentPerExampleUsd.toFixed(4) + " per example + $" + sentimentPerDayUsd.toFixed(3) + " per extra day of window. Body: {topic, hours_back?: 1..168, max_examples?: 1..10, min_engagement?: int}.",
+        "POST " + origin + "/v1/x/factcheck",
+        "  Factcheck a claim against X posts and web sources: verdict (confirmed/refuted/mixed/unverified), confidence, evidence for and against. Price = $" + factcheckBaseUsd.toFixed(3) + " + $" + factcheckPerSourceUsd.toFixed(3) + " per source slot. Body: {claim, max_sources?: 1..10, days_back?: 1..30}.",
+      ] : []),
+      ...(agentsExecuteEnabled ? ["", "POST " + origin + "/v1/agents/execute", "  Autonomous agent execution with two engines (cheap agents/oss-20b, premium agents/gpt-6-sol):", "  multi-step reasoning with calculator, fetch_url, web_search, data_analysis" + (codeExecEnabled ? " and code_exec (sandboxed python/javascript/typescript)" : "") + " tools; stream=true streams SSE step events.", "  Ceiling = engine base ($0.002/$0.004) + per-step ($0.0005/$0.004)" + (codeExecEnabled ? " + code_exec $0.002/call (max 3 per task)" : "") + ", default 8, max 20 steps,", "  shown as charged_ceiling_usd. Step timeouts finalize as partial, never a bare 502."] : []),
       ...(embeddingsEnabled ? ["", "POST " + origin + "/v1/embeddings", "  Free NVIDIA embeddings with nvidia/nemotron-3-embed-1b."] : []),
       ...(freeGptOssEnabled ? [
         "",
@@ -2203,8 +2670,10 @@ app.get("/llms.txt", (req: Request, res: Response) => {
       ] : []),
       ...(jevEnabled ? ["## Jev", "", "- jev-latest: $" + jevPricePerMillion?.toFixed(2) + "/1M input tokens; output tokens free",
         "- SystemOne only. POST /jev with model, state and named questions; each question needs type (noul, choice or score) and instructions. Read answers from the response.", ""] : []),
-      ...(agentsExecuteEnabled ? ["## Agents", "", "- agents/oss-20b: $0.002 base + $0.001 per step (charged at the max_steps ceiling, default 8)",
-        "- POST /v1/agents/execute with model, task, optional context, max_steps (1-20) and tools (calculator, fetch_url). Answers include the full step trace, fetched sources and token usage.", ""] : []),
+      ...(xSearchEnabled ? ["## X Search", "", "- " + xSearchModel + ": $" + xSearchBasePriceUsd.toFixed(3) + " base + $" + xSearchPerResultUsd.toFixed(4) + " x max_results (default 10, max 25); include_web adds $" + xSearchWebPriceUsd.toFixed(2),
+        "- POST /v1/x/search with {query, max_results?: 1..25, include_web?: bool, instructions?: string}. Response is a Responses API object whose output_text summarizes the findings with direct post links.", ""] : []),
+      ...(agentsExecuteEnabled ? ["## Agents", "", "- agents/oss-20b (cheap): $0.002 base + $0.0005 per step; agents/gpt-6-sol (premium): $0.004 base + $0.004 per step" + (codeExecEnabled ? "; code_exec $0.002 per call (max 3 per task)" : "") + "; charged at the max_steps ceiling (default 8, max 20), shown as charged_ceiling_usd",
+        "- POST /v1/agents/execute with model, task, optional context, max_steps, tools (calculator, fetch_url, web_search, data_analysis" + (codeExecEnabled ? ", code_exec" : "") + ") and stream=true for SSE step events (open, step, done). Answers include the full step trace, fetched sources and token usage; step timeouts finalize as partial.", ""] : []),
       "## Usage",
       "",
       `1. Make a request to ${baseUrl}/chat/completions without payment`,
