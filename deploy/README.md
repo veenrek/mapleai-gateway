@@ -1,5 +1,34 @@
 # Apache reverse proxy
 
+## Admin build backups (instant rollback)
+
+The Next.js admin app runs from `/opt/mapleai-admin/.build/next` — losing that
+directory takes the dashboard (and eventually every Node route) down, so keep
+a known-good artifact on the box at all times.
+
+- Archive a verified build BEFORE touching `.build` (rule learned 2026-10-01,
+  when an interrupted command deleted the only build mid-recovery):
+
+  ```sh
+  BID=$(cat /opt/mapleai-admin/.build/next/BUILD_ID)
+  mkdir -p /opt/mapleai-admin/.build-backups
+  cd /opt/mapleai-admin/.build/next
+  tar czf /opt/mapleai-admin/.build-backups/build-$BID-$(date +%Y%m%d-%H%M%S).tar.gz \
+    BUILD_ID package.json ./*.json required-server-files.js server static
+  ln -sfn build-$BID-$(date +%Y%m%d-%H%M%S).tar.gz /opt/mapleai-admin/.build-backups/latest.tar.gz
+  ```
+
+- Roll back with `/opt/mapleai-admin/rollback-build.sh [tarball]` (defaults to
+  `.build-backups/latest.tar.gz`). It stops the service, restores, starts, and
+  verifies health + dashboard render (~10 s downtime). Verified working
+  2026-10-01.
+
+- Builds are produced locally (Windows) and uploaded — never run `npm run build`
+  on the VDS: it OOMs under the live service, and killed builds leave zombie
+  `jest-worker` processes (see 2026-10-01 incident: three of them held ~300%
+  CPU for 4 days). After any build attempt anywhere, `pkill -f jest-worker` to
+  be sure.
+
 The gateway uses Express `trust proxy`. The x402 Express adapter builds
 `PaymentRequired.resource.url` from the request protocol and host.
 
@@ -17,6 +46,107 @@ Use port 4022 for the Base instance. Verify with `apache2ctl configtest`
 before reloading Apache. Without `X-Forwarded-Proto`, x402 advertises an
 `http://` resource URL even when the public request used HTTPS, and Bazaar
 discovery rejects the payment challenge.
+
+## HTTP/2 and compression
+
+The HTTPS vhosts enable `Protocols h2 http/1.1` and mod_deflate for JSON
+responses (SSE `text/event-stream` is excluded so streaming is never
+buffered). Before deploying those vhosts, enable the modules:
+
+```sh
+a2enmod http2 deflate headers
+# mod_http2 does not work with mpm_prefork; switch to mpm_event if needed:
+a2dismod mpm_prefork && a2enmod mpm_event
+apache2ctl configtest && systemctl reload apache2
+```
+
+Only switch the MPM if `apache2ctl -M` shows `mpm_prefork_module`. mod_http2
+does not run under mpm_prefork, and mod_php requires it — on the production
+box PHP was therefore moved to php8.3-fpm (the vhosts proxy everything else
+to Node). If the box has additional vhosts not committed to this repo,
+apply the same `Protocols h2 http/1.1` and deflate blocks to them.
+
+## CDN in front (Cloudflare)
+
+The box is a single EU VDS; clients outside Europe pay a full RTT plus TLS
+handshake per connection. Cloudflare's free tier terminates TLS at an edge
+near the client, which removes most of that latency. API responses are never
+cached (billing), so only the transport is fronted.
+
+Step by step:
+
+1. **Add the zone.** In the Cloudflare dashboard: Add site → `mapleai.shop`
+   → Free plan. Cloudflare scans existing DNS records; verify they match the
+   registrar's zone (all A records pointing at the VDS IP).
+2. **DNS records** (Cloudflare → DNS → Records). One A record per hostname,
+   all pointing at the VDS IPv4, all with proxy status **Proxied**
+   (orange cloud):
+   `mapleai.shop`, `sol`, `base`, `arc`, `polygon` (and `www` if used).
+   Any mail records (MX/SPF/DKIM), if they ever exist, must stay
+   "DNS only" (gray cloud).
+3. **Switch nameservers.** Cloudflare assigns two nameservers; set them at
+   the domain registrar for `mapleai.shop` (replacing the current ones) and
+   wait for the zone to become Active (minutes to a few hours). Zero
+   downtime: until the NS switch, traffic keeps going to the current DNS.
+4. **SSL/TLS mode.** Cloudflare → SSL/TLS → Overview → set **Full (strict)**.
+   Do this before relying on the zone; the default Flexible mode would talk
+   plain HTTP to Apache. If the setting is locked until the zone is active,
+   do it immediately after activation. The Let's Encrypt origin certificates
+   keep working; certbot renewals pass through the proxy and are unaffected.
+
+Recommended settings (same dashboard):
+
+- SSL/TLS → Edge Certificates: **Always Use HTTPS** on, Minimum TLS 1.2,
+  **Brotli** on (Speed → Optimization covers this on current dashboards),
+  HTTP/2 and HTTP/3 (QUIC) are on by default on Free.
+- Network: **HTTP/2 to Origin** on (Apache now speaks h2 upstream too).
+- Caching → Cache Rules: create one rule — hostname in
+  `mapleai.shop, *.mapleai.shop` → **Bypass cache**. POSTs and `no-store`
+  responses are not cached anyway; the rule also protects SSE streams and
+  any future static content with ambiguous headers.
+- Security → Bots: leave **Bot Fight Mode off**. API consumers are scripts,
+  and challenge/interstitial modes would break them. Keep Security level at
+  Medium or lower; do not put `/v1/*` behind any challenge rule.
+- WebSocket: leave enabled (irrelevant to the SSE API, harmless).
+
+Origin hardening (optional but recommended once everything works):
+
+1. Allow ports 80/443 only from Cloudflare ranges
+   (https://www.cloudflare.com/ips, they change rarely and are announced):
+
+   ```sh
+   ufw delete allow 80,443/tcp 2>/dev/null  # adjust to existing rules
+   for ip in $(curl -s https://www.cloudflare.com/ips-v4); do
+     ufw allow from "$ip" to any port 80,443 proto tcp
+   done
+   ufw reload
+   ```
+
+2. Restore real client IPs in Apache logs (the Node apps already read
+   `cf-connecting-ip`; this fixes Apache's own logs):
+
+   ```sh
+   a2enmod remoteip
+   cat > /etc/apache2/conf-available/cloudflare-remoteip.conf <<'EOF'
+   RemoteIPHeader CF-Connecting-IP
+   RemoteIPTrustedProxyList /etc/apache2/cloudflare-ips.txt
+   EOF
+   curl -s https://www.cloudflare.com/ips-v4 > /etc/apache2/cloudflare-ips.txt
+   curl -s https://www.cloudflare.com/ips-v6 >> /etc/apache2/cloudflare-ips.txt
+   a2enconf cloudflare-remoteip && systemctl reload apache2
+   ```
+
+Verification after the NS switch:
+
+```sh
+dig +short NS mapleai.shop            # the two Cloudflare nameservers
+curl -s -o /dev/null -w "%{http_version} %{response_code}\n" https://mapleai.shop/v1/health
+curl -sI https://mapleai.shop/v1/health | grep -i "^server\|cf-ray"
+```
+
+Responses should show `server: cloudflare` and a `CF-RAY` header. Clients
+near a Cloudflare edge then pay their TLS handshake locally instead of to
+the EU box; SSE streaming passes through unbuffered.
 
 ## Arc facilitator
 

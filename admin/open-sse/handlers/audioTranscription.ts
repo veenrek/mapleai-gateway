@@ -22,6 +22,7 @@ import {
 import { buildAuthHeaders } from "../config/registryUtils.ts";
 import { kieExecutor } from "../executors/kie.ts";
 import { vertexTranscribe } from "../executors/vertexMedia.ts";
+import { resolveProxyForConnection } from "@/lib/localDb";
 import { errorResponse } from "../utils/error.ts";
 
 type TranscriptionCredentials = {
@@ -472,12 +473,17 @@ export async function handleAudioTranscription({
           : "audio/wav";
       const languageValue = formData.get("language");
       const promptValue = formData.get("prompt");
+      const proxyInfo = (credentials as { connectionId?: string } | null)?.connectionId
+        ? await resolveProxyForConnection((credentials as unknown as { connectionId: string }).connectionId)
+        : null;
       const text = await vertexTranscribe(credentials ?? {}, {
         model: modelId as string,
         audioBase64: buffer.toString("base64"),
         mimeType: uploadedType,
         prompt: typeof promptValue === "string" ? promptValue : undefined,
         language: typeof languageValue === "string" ? languageValue : undefined,
+        studio: providerConfig.studio === true,
+        proxy: proxyInfo?.proxy ?? null,
       });
       return Response.json({ text }, { headers: { ...CORS_HEADERS } });
     } catch (err) {

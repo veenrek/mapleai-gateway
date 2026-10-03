@@ -17,6 +17,7 @@
 
 import { Buffer } from "node:buffer";
 import { sleep } from "../utils/sleep.ts";
+import { runWithProxyContext } from "../utils/proxyFetch.ts";
 import {
   parseSAFromApiKey,
   getAccessToken,
@@ -79,9 +80,23 @@ async function resolveVertexAuth(
 function buildModelRequest(
   auth: ResolvedVertexAuth,
   model: string,
-  action: string
+  action: string,
+  studio = false
 ): { url: string; headers: Record<string, string> } {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
+
+  // Gemini AI Studio (free-tier API key) — generativelanguage surface, ?key= auth.
+  if (studio) {
+    if (!auth.expressKey) {
+      throw new Error("Gemini AI Studio requires an API key (no Service Account support)");
+    }
+    return {
+      url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:${action}?key=${encodeURIComponent(
+        auth.expressKey
+      )}`,
+      headers,
+    };
+  }
 
   if (auth.bearerToken && auth.project) {
     headers["Authorization"] = `Bearer ${auth.bearerToken}`;
@@ -180,8 +195,14 @@ function extractText(data: unknown): string {
     ?.content?.parts;
   if (!Array.isArray(parts)) return "";
   return parts
-    .map((part) => (part as { text?: unknown })?.text)
-    .filter((text): text is string => typeof text === "string")
+    .map((part) => {
+      const p = part as { text?: unknown; audioTranscription?: { text?: unknown } } | undefined;
+      // Dedicated transcribe models (gemini-3.5-transcribe) answer with an
+      // audioTranscription part instead of plain text.
+      if (typeof p?.text === "string") return p.text;
+      const transcript = p?.audioTranscription?.text;
+      return typeof transcript === "string" ? transcript : "";
+    })
     .join("")
     .trim();
 }
@@ -189,10 +210,18 @@ function extractText(data: unknown): string {
 /** Gemini TTS → WAV audio buffer. */
 export async function vertexGenerateSpeech(
   credentials: VertexMediaCredentials,
-  options: { model: string; input: string; voice?: string }
+  options: {
+    model: string;
+    input: string;
+    voice?: string;
+    /** AI Studio (generativelanguage) instead of Vertex AI. */
+    studio?: boolean;
+    /** Resolved proxy config for the underlying fetch (per-connection). */
+    proxy?: unknown;
+  }
 ): Promise<{ audio: Buffer; contentType: string }> {
   const auth = await resolveVertexAuth(credentials);
-  const { url, headers } = buildModelRequest(auth, options.model, "generateContent");
+  const { url, headers } = buildModelRequest(auth, options.model, "generateContent", options.studio === true);
   const payload = {
     contents: [{ role: "user", parts: [{ text: options.input }] }],
     generationConfig: {
@@ -204,22 +233,38 @@ export async function vertexGenerateSpeech(
       },
     },
   };
-  const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(payload) });
-  if (!res.ok) throw await vertexError(res);
-  const data = await res.json();
-  const inline = extractInlineAudio(data);
-  if (!inline) throw new Error("Vertex TTS returned no audio content");
-  const pcm = Buffer.from(inline.base64, "base64");
-  return { audio: pcmToWav(pcm, parseSampleRate(inline.mimeType)), contentType: "audio/wav" };
+  return runWithProxyContext(options.proxy ?? null, async () => {
+    const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(payload) });
+    if (!res.ok) throw await vertexError(res);
+    const data = await res.json();
+    const inline = extractInlineAudio(data);
+    if (!inline) throw new Error("Vertex TTS returned no audio content");
+    const pcm = Buffer.from(inline.base64, "base64");
+    // AI Studio 3.8 TTS models return a RIFF container already; only raw L16 needs wrapping.
+    if (pcm.subarray(0, 4).toString("latin1") === "RIFF") {
+      return { audio: pcm, contentType: "audio/wav" };
+    }
+    return { audio: pcmToWav(pcm, parseSampleRate(inline.mimeType)), contentType: "audio/wav" };
+  });
 }
 
 /** Gemini transcription (audio → text). `audioBase64` is the raw file bytes, base64-encoded. */
 export async function vertexTranscribe(
   credentials: VertexMediaCredentials,
-  options: { model: string; audioBase64: string; mimeType?: string; prompt?: string; language?: string }
+  options: {
+    model: string;
+    audioBase64: string;
+    mimeType?: string;
+    prompt?: string;
+    language?: string;
+    /** AI Studio (generativelanguage) instead of Vertex AI. */
+    studio?: boolean;
+    /** Resolved proxy config for the underlying fetch (per-connection). */
+    proxy?: unknown;
+  }
 ): Promise<string> {
   const auth = await resolveVertexAuth(credentials);
-  const { url, headers } = buildModelRequest(auth, options.model, "generateContent");
+  const { url, headers } = buildModelRequest(auth, options.model, "generateContent", options.studio === true);
   const instruction =
     options.prompt && options.prompt.trim().length > 0
       ? options.prompt.trim()
@@ -237,9 +282,11 @@ export async function vertexTranscribe(
       },
     ],
   };
-  const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(payload) });
-  if (!res.ok) throw await vertexError(res);
-  return extractText(await res.json());
+  return runWithProxyContext(options.proxy ?? null, async () => {
+    const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(payload) });
+    if (!res.ok) throw await vertexError(res);
+    return extractText(await res.json());
+  });
 }
 
 /** Lyria music generation → { base64 WAV, format }. */

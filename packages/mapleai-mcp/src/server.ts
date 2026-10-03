@@ -58,7 +58,13 @@ function header(value: string | null, name: string): any {
   if (!value) throw new Error('Missing ' + name + ' header');
   return JSON.parse(Buffer.from(value, 'base64').toString('utf8'));
 }
-export async function paidCall(name: Network, path: string, body: string) {
+interface PaidRaw {
+  raw: string;
+  contentType: string;
+  payment: { network: string; amount_usdc: number; transaction: string | null };
+}
+
+export async function paidRequest(name: Network, path: string, body: string, timeoutMs = 120_000): Promise<PaidRaw> {
   const target = networks[name];
   const url = target.origin + path;
   const payTo = recipient(name);
@@ -84,15 +90,20 @@ export async function paidCall(name: Network, path: string, body: string) {
   delete payload.extensions?.quote;
   const paid = await fetch(url, {
     method: 'POST', headers: { ...headers, 'payment-signature': Buffer.from(JSON.stringify(payload)).toString('base64') },
-    body, signal: AbortSignal.timeout(120_000),
+    body, signal: AbortSignal.timeout(timeoutMs),
   });
   const settlement = paid.headers.get('payment-response') ? header(paid.headers.get('payment-response'), 'PAYMENT-RESPONSE') : undefined;
   const raw = await paid.text();
   if (!paid.ok) throw new Error('API HTTP ' + paid.status + ': ' + raw.slice(0, 500));
   if (settlement && settlement.success !== true) throw new Error('Payment settlement failed');
-  return { response: JSON.parse(raw) as unknown, payment: {
+  return { raw, contentType: paid.headers.get('content-type') ?? '', payment: {
     network: target.id, amount_usdc: Number(requirement.amount) / 1_000_000, transaction: settlement?.transaction ?? null,
   } };
+}
+
+export async function paidCall(name: Network, path: string, body: string) {
+  const { raw, payment } = await paidRequest(name, path, body);
+  return { response: JSON.parse(raw) as unknown, payment };
 }
 export async function paidChat(name: Network, body: string) {
   return paidCall(name, '/v1/chat/completions', body);
@@ -166,6 +177,55 @@ server.registerTool('jev_decide', {
   try {
     const result = await paidCall(network, '/jev', JSON.stringify({ model: 'jev-latest', state, questions }));
     return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+  } catch (error) { return { isError: true, content: [{ type: 'text', text: String(error) }] }; }
+});
+
+server.registerTool('agent_execute', {
+  description:
+    'Paid autonomous agent execution: give a natural-language task, a multi-step agent reasons and calls tools ' +
+    '(calculator, fetch_url, web_search via the keyless Exa index, data_analysis, code_exec — sandboxed ' +
+    'python/javascript/typescript, $0.002 per call, max 3 per task). ' +
+    'Engines: agents/oss-20b (cheap — short tasks ~$0.004) and agents/gpt-6-sol (premium reasoning ~$0.004 base + $0.004/step). ' +
+    'Charged at the max_steps ceiling plus allowed-tool fees. With stream=true the reply contains the live SSE step transcript; ' +
+    'the agent.execution object always includes the full step trace, sources, usage and charged_ceiling_usd.',
+  inputSchema: {
+    network: networkSchema,
+    task: z.string().min(1).max(12000),
+    model: z.enum(['agents/oss-20b', 'agents/gpt-6-sol']).default('agents/oss-20b'),
+    context: z.string().max(12000).optional(),
+    max_steps: z.number().int().min(1).max(20).default(8),
+    tools: z.array(z.enum(['calculator', 'fetch_url', 'web_search', 'data_analysis', 'code_exec'])).optional(),
+    stream: z.boolean().default(false),
+  },
+}, async ({ network, task, model, context, max_steps, tools, stream }) => {
+  try {
+    const body: Record<string, unknown> = { model, task, max_steps, stream };
+    if (context !== undefined) body.context = context;
+    if (tools !== undefined) body.tools = tools;
+    const { raw, payment } = await paidRequest(network, '/v1/agents/execute', JSON.stringify(body), 540_000 + max_steps * 15_000);
+    if (!stream) return { content: [{ type: 'text', text: JSON.stringify({ execution: JSON.parse(raw), payment }) }] };
+    // SSE: rebuild the transcript from open/step events and the final done payload.
+    const transcript: string[] = [];
+    let donePayload: unknown = null;
+    for (const block of raw.split(/\r?\n\r?\n/)) {
+      const evMatch = /^event: (\w+)\ndata: ([\s\S]*)$/.exec(block.trim());
+      if (!evMatch) continue;
+      const [, ev, dataRaw] = evMatch;
+      try {
+        const data = JSON.parse(dataRaw) as Record<string, unknown>;
+        if (ev === 'open') transcript.push(`> ceiling charged: $${data.charged_ceiling_usd} | engine ${data.model} | steps max ${data.max_steps}`);
+        if (ev === 'step') {
+          const args = data.tool_call ? JSON.stringify((data.tool_call as { args?: unknown }).args ?? {}) : undefined;
+          transcript.push(`step ${data.n}: ${data.thought ?? ''}` +
+            (data.action === 'tool' ? `\n  tool ${(data.tool_call as { name?: string })?.name} ${args}` : '') +
+            (typeof data.answer === 'string' ? `\n  answer: ${data.answer}` : ''));
+        }
+        if (ev === 'done') donePayload = data;
+      } catch { /* keep raw block */ }
+    }
+    if (!donePayload) throw new Error('SSE done event missing: ' + raw.slice(0, 300));
+    const header = transcript.length > 0 ? transcript.join('\n') + '\n\n' : '';
+    return { content: [{ type: 'text', text: header + JSON.stringify({ execution: donePayload, payment }) }] };
   } catch (error) { return { isError: true, content: [{ type: 'text', text: String(error) }] }; }
 });
 

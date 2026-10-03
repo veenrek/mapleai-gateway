@@ -1,5 +1,6 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+import { base58 } from "@scure/base";
 import { config } from "./config.js";
 import { isTokenPriced, pricingForModel } from "./models.js";
 
@@ -18,16 +19,87 @@ export interface UsageRecord {
   actualCostUsd?: number;
 }
 
-/** Best-effort payer extraction from the x402 payment header (EVM exact only). */
+const TOKEN_PROGRAM_IDS = new Set([
+  "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+  "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+]);
+const TOKEN_PROGRAM_BYTES = [...TOKEN_PROGRAM_IDS].map((id) => base58.decode(id));
+const IX_TOKEN_TRANSFER = 3;
+const IX_TOKEN_TRANSFER_CHECKED = 12;
+
+function readCompactU16(bytes: Buffer, state: { offset: number }): number {
+  let value = 0;
+  let shift = 0;
+  for (;;) {
+    const b = bytes[state.offset++];
+    value |= (b & 0x7f) << shift;
+    if ((b & 0x80) === 0) break;
+    shift += 7;
+    if (shift > 21) throw new Error("compact-u16 overflow");
+  }
+  return value;
+}
+
+/**
+ * Buyer address from a Solana wire transaction: the authority (owner) of the
+ * token transfer in it. The facilitator holds the fee-payer slot (header index
+ * 0), so payer ≠ keys[0] — walk the instructions instead. Falls back to the
+ * first non-fee-payer signer when no transfer instruction parses.
+ */
+export function extractSvmPayer(transactionBase64: string): string | undefined {
+  try {
+    const bytes = Buffer.from(transactionBase64, "base64");
+    const state = { offset: 0 };
+    const signatureCount = readCompactU16(bytes, state);
+    state.offset += 64 * signatureCount;
+    if (bytes[state.offset] === 0x80) state.offset += 1; // versioned (v0) marker
+    const requiredSigners = bytes[state.offset];
+    state.offset += 3; // header
+    const staticKeyCount = readCompactU16(bytes, state);
+    if (staticKeyCount < 1 || staticKeyCount > 64) return undefined;
+    const keys: Buffer[] = [];
+    for (let i = 0; i < staticKeyCount; i++) {
+      keys.push(bytes.subarray(state.offset + i * 32, state.offset + (i + 1) * 32));
+    }
+    state.offset += 32 * staticKeyCount + 32; // keys + recent blockhash
+    const instructionCount = readCompactU16(bytes, state);
+    for (let i = 0; i < instructionCount; i++) {
+      const programIndex = bytes[state.offset++];
+      const accountCount = readCompactU16(bytes, state);
+      const accounts = [...bytes.subarray(state.offset, state.offset + accountCount)];
+      state.offset += accountCount;
+      const dataLength = readCompactU16(bytes, state);
+      const data = bytes.subarray(state.offset, state.offset + dataLength);
+      state.offset += dataLength;
+      const program = keys[programIndex];
+      if (!program || !TOKEN_PROGRAM_BYTES.some((id) => program.equals(id))) continue;
+      if (data[0] === IX_TOKEN_TRANSFER_CHECKED && accounts.length >= 4) {
+        const authority = keys[accounts[3]];
+        if (authority) return base58.encode(authority);
+      }
+      if (data[0] === IX_TOKEN_TRANSFER && accounts.length >= 3) {
+        const authority = keys[accounts[2]];
+        if (authority) return base58.encode(authority);
+      }
+    }
+    // Fallback: first signer that is not the fee payer.
+    if (requiredSigners >= 2 && keys[1]) return base58.encode(keys[1]);
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Best-effort payer extraction from the x402 payment header (EVM and SVM exact). */
 export function extractPayer(paymentHeader: string | undefined): string | undefined {
   if (!paymentHeader) return undefined;
   try {
     const payload = JSON.parse(Buffer.from(paymentHeader, "base64").toString("utf8"));
-    return (
-      payload?.payload?.authorization?.from ??
-      payload?.payload?.from ??
-      undefined
-    );
+    const evm = payload?.payload?.authorization?.from ?? payload?.payload?.from;
+    if (evm) return evm;
+    const transaction = payload?.payload?.transaction;
+    if (typeof transaction === "string") return extractSvmPayer(transaction);
+    return undefined;
   } catch {
     return undefined;
   }

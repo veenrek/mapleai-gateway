@@ -93,7 +93,10 @@ export async function movePath(sourcePath, destinationPath, fsImpl = fs) {
 function runNextBuild() {
   return new Promise((resolve) => {
     const nextBin = path.join(projectRoot, "node_modules", "next", "dist", "bin", "next");
-    const child = spawn(process.execPath, [nextBin, "build", resolveNextBuildBundlerFlag()], {
+    // --require: the EPERM/EACCES swallow must live in the child — this
+    // process's own unhandledRejection handler never sees child rejections.
+    const epermPreload = path.join(projectRoot, "scripts", "build", "swallow-eprem-preload.cjs");
+    const child = spawn(process.execPath, ["--require", epermPreload, nextBin, "build", resolveNextBuildBundlerFlag()], {
       cwd: projectRoot,
       stdio: "inherit",
       env: resolveNextBuildEnv(process.env),

@@ -17,6 +17,14 @@ import { imageRates, imagesEnabled } from "./images.js";
 import { embeddingModel, embeddingsEnabled } from "./embeddings.js";
 import { jevEnabled, jevModel, jevPricePerMillion } from "./jev.js";
 import { agentsExecuteEnabled } from "./agents.js";
+import {
+  speechEnabled,
+  speechModels,
+  speechPriceUsd,
+  transcriptionModels,
+  transcriptionPriceUsd,
+  transcriptionsEnabled,
+} from "./audio.js";
 import { freeGptOssEnabled, freeGptOssModel } from "./free-gptoss.js";
 import { nftEnabled, nftNetworks } from "./nft.js";
 import { prepaidCodesEnabled, prepaidStatusUrl } from "./prepaid-codes.js";
@@ -214,6 +222,48 @@ export function docVars(origin: string): DocVars {
       'The x402 challenge includes the exact price with payment overhead. Successful responses contain data[].url or data[].b64_json.\n\n' : '',
     AGENT_IMAGE_ENDPOINTS: imagesEnabled ? '| POST | /api/v1/images/generations | Image generation |\n' +
       '| POST | /api/v1/images/image2image | Image editing |' : '',
+    AGENT_AUDIO: speechEnabled || transcriptionsEnabled ? '## Audio Models\n\n' +
+      (speechEnabled ? '- TTS: ' + speechModels.map((m) => '`' + m + '`').join(', ') + ' — $' + speechPriceUsd.toFixed(3) + ' per request. ' +
+        'POST ' + origin + '/v1/audio/speech with JSON model, input (text up to 5000 chars), optional voice and response_format (wav only). ' +
+        'OpenAI voice presets (alloy, nova, onyx…) map to Gemini voices; `orpheus-*` models take their own voice names ' +
+        '(en: autumn/diana/hannah/austin/daniel/troy, ar: fahad/sultan/noura/lulwa/aisha/abdullah) and emotion tags like [laughs]. ' +
+        'speed (0.25-4) is honored on the orpheus models only. Returns an audio/wav stream.\n' : '') +
+      (transcriptionsEnabled ? '- STT: ' + transcriptionModels.map((m) => '`' + m + '`').join(', ') + ' — $' + transcriptionPriceUsd.toFixed(3) + ' per request. ' +
+        'POST ' + origin + '/v1/audio/transcriptions as multipart form (file + model fields) or JSON {file: base64/data-URI, model}; audio up to 25 MB. ' +
+        'response_format: json|text everywhere; verbose_json (word timestamps), srt and vtt only on the whisper-large-v3* models. Returns {"text": ...} or the requested format body.\n' : '') +
+      'Every audio response carries `x-audio-upstream` (the vendor/model that served) and `x-fallback-used` (1 = a secondary vendor served after the primary failed; for TTS the voice then differs from the primary).\n\n' : '',
+    AGENT_AUDIO_ENDPOINTS: (speechEnabled ? '| POST | /v1/audio/speech | Text-to-speech (WAV) |\n' : '') +
+      (transcriptionsEnabled ? '| POST | /v1/audio/transcriptions | Speech-to-text |' : ''),
+    HOME_AUDIO_NAV: speechEnabled || transcriptionsEnabled ? '<a href="#audio">Audio</a>' : '',
+    HOME_AUDIO: speechEnabled || transcriptionsEnabled ? '<section id="audio"><h2>Audio</h2><p class="h2sub">' +
+      (speechEnabled ? 'Text-to-speech (' + speechModels.map((m) => '<code>' + m + '</code>').join(', ') + ', $' + speechPriceUsd.toFixed(3) + '/request)' +
+        (transcriptionsEnabled ? ' and ' : '') : '') +
+      (transcriptionsEnabled ? 'speech-to-text (' + transcriptionModels.map((m) => '<code>' + m + '</code>').join(', ') + ', $' + transcriptionPriceUsd.toFixed(3) + '/request, word timestamps on whisper-large-v3*)' : '') +
+      '.</p><p><code>POST /v1/audio/speech</code> &nbsp; <code>POST /v1/audio/transcriptions</code> &nbsp; <a href="' + origin + '/developers#audio">Audio API guide</a></p></section>' : '',
+    DEVELOPER_AUDIO_NAV: speechEnabled || transcriptionsEnabled ? '<a href="#audio">Audio</a>' : '',
+    DEVELOPER_AUDIO: speechEnabled || transcriptionsEnabled ? '<section id="audio"><h2>Audio</h2><p class="muted">OpenAI-compatible audio endpoints with x402 USDC payments; flat price per request plus settlement overhead shown in the 402 challenge.</p>' +
+      '<dl class="endpoint-list">' +
+      (speechEnabled ? '<div><dt>Text-to-speech</dt><dd><code>POST /v1/audio/speech</code> — $' + speechPriceUsd.toFixed(3) + ' / request</dd></div>' : '') +
+      (transcriptionsEnabled ? '<div><dt>Speech-to-text</dt><dd><code>POST /v1/audio/transcriptions</code> — $' + transcriptionPriceUsd.toFixed(3) + ' / request</dd></div>' : '') +
+      '</dl>' +
+      (speechEnabled ? '<div class="table-scroll"><table><thead><tr><th>TTS model</th><th>Backend &amp; voices</th></tr></thead><tbody>' +
+        '<tr><td><code>tts-1</code></td><td>Gemini 3.8 Flash Lite; OpenAI presets (alloy, nova, onyx…)</td></tr>' +
+        '<tr><td><code>tts-1-hd</code></td><td>Gemini 3.8 Flash; same presets, fuller voice</td></tr>' +
+        '<tr><td><code>orpheus-english</code></td><td>Orpheus EN (emotive, [laughs] tags, real speed): autumn, diana, hannah, austin, daniel, troy</td></tr>' +
+        '<tr><td><code>orpheus-arabic</code></td><td>Orpheus AR Saudi: fahad, sultan, noura, lulwa, aisha, abdullah</td></tr>' +
+        '</tbody></table></div>' : '') +
+      (transcriptionsEnabled ? '<div class="table-scroll"><table><thead><tr><th>STT model</th><th>Notes</th></tr></thead><tbody>' +
+        '<tr><td><code>whisper-1</code></td><td>Gemini 3.5 Transcribe — default quality, json/text</td></tr>' +
+        '<tr><td><code>whisper-large-v3</code></td><td>Groq Whisper v3 — accuracy + verbose_json word timestamps, srt, vtt</td></tr>' +
+        '<tr><td><code>whisper-large-v3-turbo</code></td><td>Groq Whisper turbo — fast + same timestamp formats</td></tr>' +
+        '</tbody></table></div>' : '') +
+      '<div class="snippet"><div class="snippet-title">Text-to-speech</div><pre><code>curl -i ' + origin + '/v1/audio/speech \\\n' +
+      '  -H \'content-type: application/json\' \\\n' +
+      '  -d \'{"model":"tts-1","input":"Hello from MapleAI","voice":"alloy"}\'</code></pre></div>' +
+      '<div class="snippet"><div class="snippet-title">Transcription</div><pre><code>curl -i ' + origin + '/v1/audio/transcriptions \\\n' +
+      '  -F file=@clip.mp3 -F model=whisper-large-v3-turbo -F response_format=verbose_json</code></pre></div>' +
+      '<p class="muted">Transcription also accepts JSON with <code>file</code> as a base64 string or <code>data:</code> URI (max 25 MB). ' +
+      'Responses include <code>x-audio-upstream</code> and <code>x-fallback-used</code> headers; a fallback 1 means a secondary vendor served the request (for TTS the voice then differs).</p></section>' : "",
     AGENT_JEV: jevEnabled ? '## Jev\n\n- ' + jevModel + ': $' + jevPricePerMillion?.toFixed(2) +
       ' per 1M input tokens, output free, plus settlement overhead. POST ' + origin + '/jev uses SystemOne; send model, state and named questions, each with type and instructions. Read answers from the response.\n\n' : '',
     AGENT_JEV_ENDPOINT: jevEnabled ? '| POST | /jev | Jev SystemOne decisions |' : '',

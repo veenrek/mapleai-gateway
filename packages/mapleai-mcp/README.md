@@ -49,6 +49,7 @@ Tools:
 | `prepaid_status` | free | Prepaid key validity and remaining tokens |
 | `chat_completion` | x402 per call | GPT chat completions |
 | `jev_decide` | x402 per call | Jev structured decisions |
+| `agent_execute` | x402 per call | Autonomous agent execution (multi-step reasoning; calculator/fetch_url/web_search/data_analysis/code_exec tools, engines agents/oss-20b cheap and agents/gpt-6-sol premium; stream=true streams SSE step events) |
 | `buy_prepaid_tap` | ~$0.008 | Issue a prepaid API key for https://mapleai.shop/v1 |
 
 Supported networks: Polygon, Base, Arc and Solana. Polygon is the default. Keep wallet keys in a secure local client configuration and enable tool approval for paid calls.

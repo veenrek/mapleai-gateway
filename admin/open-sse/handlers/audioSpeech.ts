@@ -22,6 +22,7 @@ import { getSpeechProvider, parseSpeechModel } from "../config/audioRegistry.ts"
 import { buildAuthHeaders } from "../config/registryUtils.ts";
 import { kieExecutor } from "../executors/kie.ts";
 import { vertexGenerateSpeech } from "../executors/vertexMedia.ts";
+import { resolveProxyForConnection } from "@/lib/localDb";
 import { errorResponse } from "../utils/error.ts";
 import {
   getKieCallbackUrl,
@@ -874,10 +875,15 @@ export async function handleAudioSpeech({
   try {
     // Route to provider-specific handler
     if (providerConfig.format === "vertex-gemini-tts") {
+      const proxyInfo = credentials?.connectionId
+        ? await resolveProxyForConnection(credentials.connectionId)
+        : null;
       const { audio, contentType } = await vertexGenerateSpeech(credentials, {
         model: modelId,
         input: body.input,
         voice: body.voice,
+        studio: providerConfig.studio === true,
+        proxy: proxyInfo?.proxy ?? null,
       });
       return new Response(audio, {
         status: 200,

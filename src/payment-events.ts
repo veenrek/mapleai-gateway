@@ -5,6 +5,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { decodePaymentRequiredHeader, decodePaymentResponseHeader, decodePaymentSignatureHeader } from '@x402/core/http';
 import { config } from './config.js';
 import { chainInfo } from './chain.js';
+import { capJson, recordX402Data } from './data-log.js';
 
 export type PaymentEvent = {
   id: string;
@@ -25,7 +26,8 @@ export type PaymentEvent = {
 };
 
 const paidPaths = new Set(['/v1/chat/completions', '/api/v1/chat/completions', '/v1/responses', '/api/v1/responses',
-  '/api/v1/images/generations', '/api/v1/images/image2image', '/jev', '/prepaid/codes']);
+  '/api/v1/images/generations', '/api/v1/images/image2image', '/jev', '/v1/agents/execute',
+  '/prepaid/codes', '/prepaid/codes/auto']);
 const eventsFile = process.env.PAYMENT_EVENTS_FILE ?? './payment-events.jsonl';
 
 function clean(value: unknown, max = 160): string | undefined {
@@ -65,7 +67,7 @@ export function paymentEventForResponse(req: Request, res: Response, id: string)
   const event: PaymentEvent = {
     id, ts: new Date().toISOString(), kind: 'request_failed', route: req.path,
     model: clean(req.body?.model, 100), network: config.network, httpStatus: res.statusCode, ...signed,
-    ...(req.path === '/prepaid/codes' && Number.isSafeInteger(req.body?.tokens) ? { tokens: req.body.tokens } : {}),
+    ...(req.path.startsWith('/prepaid/codes') && Number.isSafeInteger(req.body?.tokens) ? { tokens: req.body.tokens } : {}),
     clientIp: clientIp(req), userAgent: clean(req.get('user-agent'), 200),
   };
   const receiptHeader = res.getHeader('payment-response');
@@ -104,6 +106,15 @@ export function paymentEventMiddleware(req: Request, res: Response, next: NextFu
   const id = randomUUID();
   res.once('finish', () => {
     const event = paymentEventForResponse(req, res, id);
+    // Content log for every signed (paid) attempt, independent of the accounting
+    // event file: WHO paid (address), WHAT they requested (capped body), outcome.
+    const signature = req.get('payment-signature') ?? req.get('x-payment');
+    if (signature) {
+      recordX402Data({
+        ...(event ?? { id, ts: new Date().toISOString(), route: req.path, model: (req.body as { model?: unknown })?.model, httpStatus: res.statusCode }),
+        request: capJson((req as Request & { body?: unknown }).body),
+      });
+    }
     if (!event) return;
     try {
       mkdirSync(dirname(eventsFile), { recursive: true });

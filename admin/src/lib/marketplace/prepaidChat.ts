@@ -34,6 +34,10 @@ function extractUsageFromSseLine(line: string): TokenUsage | null {
   if (!line.startsWith("data:")) return null;
   const payload = line.slice(5).trim();
   if (!payload || payload === "[DONE]") return null;
+  // Cheap gate before JSON.parse: usage trailers (top-level `usage` or the
+  // Responses API `response.completed` event) always contain this substring,
+  // while content chunks do not — avoids a thrown exception per SSE line.
+  if (!payload.includes('"usage"')) return null;
   try {
     const parsed = JSON.parse(payload) as {
       type?: string;
@@ -203,11 +207,14 @@ export async function handlePrepaidChatCompletion(
       } catch {
         // Non-JSON success body — charge the full reservation below.
       }
-      settle(usage?.totalTokens ?? null, true);
-      return new Response(text, {
+      // Charge after the response object is handed to the client: the sync
+      // SQLite write must not hold the completed response back.
+      const response = new Response(text, {
         status: upstreamResponse.status,
         headers: upstreamResponse.headers,
       });
+      setTimeout(() => settle(usage?.totalTokens ?? null, true), 0);
+      return response;
     } catch (error) {
       settle(null, false);
       return marketplaceError(502, "Failed to read upstream response", "upstream_error");

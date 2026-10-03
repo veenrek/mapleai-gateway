@@ -72,12 +72,48 @@ Returns list of available models with pricing and capabilities.
 
 No API keys, no subscriptions, no monthly bills.
 
+### Payment rules (critical for agents)
+- **One signature = one request.** Every request needs its own 402 challenge and its own signed authorization.
+- **Never reuse or fan out a payment-signature.** Do not replay the same signed payload across retries or parallel calls — the first settlement consumes the nonce, and every subsequent attempt is rejected (`settlement_unconfirmed`).
+- **On 402, start over**: fetch a fresh challenge and sign again. Prices and gas overhead vary between challenges, so never pay against a stale quote.
+- Failed settlements are never charged and never deliver content; a correct retry loop converges in one extra round trip.
+
+## Agents API (`agent.execution`)
+
+`POST /v1/agents/execute` runs a multi-step agent on a natural-language task (x402 payment, or a prepaid `oms_buy_` Bearer key).
+
+**Request**: `task` (required), `model` = `agents/oss-20b` (cheap) | `agents/gpt-6-sol` (premium), optional `context`, `max_steps` (1–20, default 8), `tools` (`calculator`, `fetch_url`, `web_search`, `data_analysis`, `code_exec`), `stream` (SSE when true).
+
+**Response** `agent.execution`: `id`, `status` (`completed` | `failed` | `timeout`), `steps_executed`, full `steps[]` trace (thought/action/tool_call/tool_result/usage per step), `output` (`reasoning`, `result`, `confidence` (currently null), `sources`), `usage` (tokens + `reasoning_tokens`/`action_tokens` + `charged_tools` + `charge` with `charged_ceiling_usd`).
+
+**Tools**: `calculator` (arithmetic), `fetch_url` (public page text), `web_search` (keyless Exa, DuckDuckGo fallback), `data_analysis` (descriptive stats, no code execution), `code_exec` (sandboxed execution of python / javascript / typescript — no network, no filesystem, no persistence; returns stdout/stderr + exit code; max 3 calls per task). Unknown tools are rejected with `tool_not_allowed`.
+
+**SSE** (`stream: true`): `event: open` (ceiling), `event: step` (each completed step live), `event: done` (full execution JSON).
+
+**Billing**: charged at the ceiling `base + max_steps × step + min(3, max_steps) × code_exec_fee` (the code_exec part applies only when the tool is allowed) + small settlement overhead, always visible as `usage.charge.charged_ceiling_usd`. Engines: `agents/oss-20b` $0.002/$0.0005 (base/step), `agents/gpt-6-sol` $0.004/$0.004; `code_exec` $0.002 per call (max 3 per task). `timeout` returns executed steps; `failed` includes a machine-readable `reason`.
+
 ## Key Features
 - **Claude-only focus**: 10 models from Anthropic
+- **Audio**: TTS `POST /v1/audio/speech` ($0.015/req, opus/wav; voices alloy/nova/shimmer) and STT `POST /v1/audio/transcriptions` ($0.006/req, OpenAI-compatible whisper models) — both via x402
 - **BlockRun-competitive pricing**: Starting at $5/1M tokens
 - **OpenAI-compatible**: Drop-in replacement for OpenAI SDK
 - **x402 payments**: Pay per request in USDC on Solana
 - **No accounts**: Wallet address is your identity
+
+## Prepaid Keys (Bearer)
+
+An alternative to per-request x402: buy a token-budget key once, then call with a plain Bearer header — no per-call payment.
+
+- **Buy**: `POST {subdomain-origin}/prepaid/codes` or `/prepaid/codes/auto` (~$0.0095 x402 on sol/base/polygon/arc). The 201 response already contains a ready-to-copy `usage.example` block.
+- **Use**: send the issued `oms_buy_…` code as `Authorization: Bearer oms_buy_…` to `https://mapleai.shop/v1/chat/completions` (OpenAI-compatible). The response of `GET /v1/models` (same Bearer) lists only the combos this key is allowed to call.
+- **Key also works on the subdomains**: same Bearer accepted at `{sol,base,polygon,arc}.mapleai.shop/api/v1/chat/completions` (prepaid bypass); without a valid key you simply get the normal 402 paywall.
+- **Status**: `GET https://mapleai.shop/v1/prepaid/status` (Bearer) → key validity plus tokens total/used/reserved/remaining.
+- Budget is debited by token usage (reserve at request, settle at the real usage). Streams (`"stream": true`) work as usual SSE.
+
+## Free Tier
+
+- **Embeddings** — `POST {subdomain-origin}/v1/embeddings` — free NVIDIA nemotron-3-embed-1b, 2048‑dim; `{"input":"Hello","input_type":"query"}`.
+- **Free chat** — `POST {subdomain-origin}/v1/free/chat/completions` — nvidia/gpt-oss-20b, rate-limited per agent (per 10 min + daily quota; `GET …/quota` shows the window). Useful as a zero-cost probe before paying.
 
 ## Technical Details
 - **Network**: Solana mainnet

@@ -48,6 +48,23 @@ cancelled, not settled.
 upfront (image generation outlives a Solana blockhash) and retry transient
 upstream failures inside the same paid request.
 
+### Audio (per request)
+
+| Model | Endpoint | Price |
+| --- | --- | ---: |
+| `tts-1`, `tts-1-hd` (Gemini flash/lite), `orpheus-english`, `orpheus-arabic` (Groq Orpheus) | `POST /v1/audio/speech` | $0.015 |
+| `whisper-1` (Gemini 3.5), `whisper-large-v3`, `whisper-large-v3-turbo` (Groq) | `POST /v1/audio/transcriptions` | $0.006 |
+
+TTS takes JSON `{model, input, voice?, response_format?}` and returns a WAV
+stream; OpenAI voice presets map to Gemini voices, the orpheus models use
+their own emotive voices (en: autumn/diana/hannah/austin/daniel/troy, ar:
+fahad/sultan/noura/lulwa/aisha/abdullah; [laughs]-style tags and real `speed`
+supported). STT takes multipart `file` + `model` or JSON base64, up to 25 MB;
+`whisper-large-v3*` add `verbose_json` word timestamps and `srt`/`vtt`.
+Responses carry `x-audio-upstream` and `x-fallback-used` headers — when the
+primary vendor fails the request fails over to a secondary one inside the
+same payment (for TTS the voice differs then).
+
 ### Jev structured decisions
 
 `POST /jev` — `jev-latest`, $0.06 per 1M input tokens, output free. SystemOne

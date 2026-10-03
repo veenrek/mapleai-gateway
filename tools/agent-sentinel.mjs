@@ -65,14 +65,17 @@ const activeDomains = domainsArg
   : Object.keys(DOMAINS);
 
 const failures = [];
+const results = [];
 const notes = [];
 
 async function probe(name, run) {
   try {
     const detail = await run();
+    results.push({ name, ok: true, detail });
     console.log(`ok   ${name}${detail ? " — " + detail : ""}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    results.push({ name, ok: false, detail: message });
     console.log(`FAIL ${name} — ${message}`);
     if (process.env.SENTINEL_DEBUG && error instanceof Error) console.log(error.stack);
     failures.push(`[${name}] ${message}`);
@@ -367,7 +370,18 @@ for (const flag of activeDomains) {
 
   await probe(`${flag} agents challenge`, async () => {
     await checkChallenge(domain.origin + "/v1/agents/execute", domain,
-      { model: "agents/oss-20b", task: "Probe: reply with OK.", max_steps: 2, tools: [] }, 10_000n);
+      { model: "agents/oss-20b", task: "Probe: reply with OK.", max_steps: 2, tools: [] }, 30_000n);
+    return "shape ok";
+  });
+
+  await probe(`${flag} audio tts challenge`, async () => {
+    await checkChallenge(domain.origin + "/v1/audio/speech", domain,
+      { model: "tts-1", input: "Sentinel audio probe", voice: "alloy", response_format: "wav" }, 35_000n);
+    return "shape ok";
+  });
+
+  await probe(`${flag} audio stt challenge`, async () => {
+    await checkChallenge(domain.origin + "/v1/audio/transcriptions", domain, {}, 35_000n);
     return "shape ok";
   });
 
@@ -698,10 +712,99 @@ if (!PROBE_ONLY) {
   }
 }
 
-const summary = `${activeDomains.length} domains scanned${PROBE_ONLY ? " (probe-only)" : ""}.`;
-if (failures.length > 0) {
-  await alert(`${failures.length} check(s) failing. ${summary}\n` + failures.slice(0, 8).join("\n"));
+// Dedicated code executor (Piston on the main VDS loopback until a separate
+// box is provisioned). Lives on the same machine as the cron.
+await probe("code executor (piston)", async () => {
+  const res = await fetch((process.env.CODE_EXEC_SENTINEL_URL ?? "http://127.0.0.1:2000") + "/api/v2/runtimes", { signal: AbortSignal.timeout(10_000) });
+  if (!res.ok) throw failureExpect(`runtimes HTTP ${res.status}`);
+  const runtimes = await res.json().catch(() => []);
+  const langs = (Array.isArray(runtimes) ? runtimes : []).map((r) => r.language).filter(Boolean);
+  for (const need of ["python", "javascript", "typescript"]) {
+    if (!langs.includes(need)) throw failureExpect(`runtime missing: ${need} (have: ${langs.join(", ") || "none"})`);
+  }
+  return `ok (${langs.join(", ")})`;
+});
+
+// ---- Hourly Russian report (telegram/webhook) ----
+const GATEWAY_DIRS = ["/opt/claude-api-sol", "/opt/claude-api-base", "/opt/claude-api-polygon", "/opt/claude-api-arc"];
+
+function readEvents24h(file) {
+  const cutoff = Date.now() - 24 * 3600 * 1000;
+  const out = [];
+  for (const dir of GATEWAY_DIRS) {
+    try {
+      for (const line of readFileSync(`${dir}/${file}`, "utf8").split("\n")) {
+        if (!line) continue;
+        try {
+          const event = JSON.parse(line);
+          if (Date.parse(event.ts || "") > cutoff) out.push(event);
+        } catch { /* malformed line */ }
+      }
+    } catch { /* file absent on this gateway */ }
+  }
+  return out;
 }
+
+function readRaw24h(file) {
+  const cutoff = Date.now() - 24 * 3600 * 1000;
+  const out = [];
+  for (const dir of GATEWAY_DIRS) {
+    try {
+      for (const line of readFileSync(`${dir}/${file}`, "utf8").split("\n")) {
+        if (!line) continue;
+        try {
+          const ts = JSON.parse(line).ts;
+          if (!ts || Date.parse(ts) > cutoff) out.push(line);
+        } catch { /* keep-line policy: malformed lines are counted too */ out.push(line); }
+      }
+    } catch { /* file absent on this gateway */ }
+  }
+  return out;
+}
+
+function buildRussianReport() {
+  const msk = new Date(Date.now() + 3 * 3600 * 1000).toISOString().slice(0, 16).replace("T", " ") + " МСК";
+  const settled = readEvents24h("payment-events.jsonl").filter((e) => e.kind === "settled");
+  const usdc = settled.reduce((s, e) => s + Number(e.amountUsdc || 0), 0);
+  const soldFreeAttempts = new Set(settled.filter((e) => e.route === "/prepaid/codes" || e.route === "/prepaid/codes/auto").map((e) => e.id));
+  const emb = readEvents24h("embedding-data.jsonl").filter((e) => e.status === 200).length;
+  const chat = readEvents24h("free-oss-data.jsonl").filter((e) => e.status === 200).length;
+  const ok = results.filter((r) => r.ok).length;
+  const bad = results.length - ok;
+  // web_search telemetry: split of exa/ddg fallbacks inside agent executions (24h)
+  let exaOk = 0, ddgOk = 0, paidAgents = 0, execCalls = 0;
+  for (const line of readRaw24h("agents-data.jsonl")) {
+    if (line.includes("via exa")) exaOk++;
+    if (line.includes("via ddg")) ddgOk++;
+    if (line.includes('"name":"code_exec"')) execCalls++;
+    paidAgents++;
+  }
+  const lines = results.slice(0, 18).map((r) => `${r.ok ? "✅" : "❌"} ${r.name}${r.ok && r.detail ? " — " + r.detail : ""}${!r.ok ? " — " + r.detail : ""}`);
+  if (bad > 0 && failures.length > 3) lines.push(`…и ещё ${failures.length - 3} ошибок`);
+  const parts = [
+    "🩺 Отчёт сентинела MapleAI",
+    msk,
+    "",
+    ...lines,
+    "",
+    `Проверки: ${ok} ок · ${bad} ошибок`,
+    `За 24 ч: платежей ${settled.length} на $${usdc.toFixed(4)} USDC` +
+      (soldFreeAttempts.size ? ` · покупок ключей ${soldFreeAttempts.size}` : ""),
+    `Бесплатные вызовы: embeddings ${emb} · chat ${chat}`,
+    `Agents: выполнений ${paidAgents} · web_search via exa ${exaOk} · fallback ddg ${ddgOk} · code_exec ${execCalls}`,
+  ];
+  return parts.join("\n");
+}
+
+let reportSent = false;
+try {
+  await alert("\n" + buildRussianReport());
+  reportSent = true;
+} catch (error) {
+  notes.push("hourly report failed: " + (error instanceof Error ? error.message : error));
+}
+
+const summary = `${activeDomains.length} domains scanned${PROBE_ONLY ? " (probe-only)" : ""}.`;
 for (const note of notes) console.log("info", note);
 console.log(failures.length ? `FAILURES: ${failures.length}` : "ALL CHECKS PASSED");
 process.exit(failures.length ? 1 : 0);

@@ -19,6 +19,8 @@ export interface AudioProvider {
   format?: string;
   supportedFormats?: string[];
   async?: boolean;
+  /** true = Gemini AI Studio (generativelanguage) instead of the Vertex AI endpoint. */
+  studio?: boolean;
   models: AudioModel[];
 }
 
@@ -33,6 +35,19 @@ export const AUDIO_TRANSCRIPTION_PROVIDERS: Record<string, AudioProvider> = {
       { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash (Vertex Transcribe)" },
       { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro (Vertex Transcribe)" },
       { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash (Vertex Transcribe)" },
+    ],
+  },
+
+  gemini: {
+    id: "gemini",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta/models",
+    authType: "apikey",
+    authHeader: "x-goog-api-key",
+    format: "vertex-gemini",
+    studio: true,
+    models: [
+      { id: "gemini-3.5-transcribe", name: "Gemini 3.5 Transcribe (AI Studio)" },
+      { id: "gemini-3.8-flash", name: "Gemini 3.8 Flash (AI Studio)" },
     ],
   },
 
@@ -170,6 +185,31 @@ export const AUDIO_SPEECH_PROVIDERS: Record<string, AudioProvider> = {
     models: [
       { id: "gemini-2.5-flash-preview-tts", name: "Gemini 2.5 Flash TTS (Vertex)" },
       { id: "gemini-2.5-pro-preview-tts", name: "Gemini 2.5 Pro TTS (Vertex)" },
+    ],
+  },
+
+  gemini: {
+    id: "gemini",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta/models",
+    authType: "apikey",
+    authHeader: "x-goog-api-key",
+    format: "vertex-gemini-tts",
+    studio: true,
+    models: [
+      { id: "gemini-3.8-flash-lite-tts", name: "Gemini 3.8 Flash Lite TTS (AI Studio)" },
+      { id: "gemini-3.8-flash-tts", name: "Gemini 3.8 Flash TTS (AI Studio)" },
+      { id: "gemini-2.5-flash-preview-tts", name: "Gemini 2.5 Flash TTS (AI Studio)" },
+    ],
+  },
+
+  groq: {
+    id: "groq",
+    baseUrl: "https://api.groq.com/openai/v1/audio/speech",
+    authType: "apikey",
+    authHeader: "bearer",
+    models: [
+      { id: "canopylabs/orpheus-v1-english", name: "Orpheus English (Groq)" },
+      { id: "canopylabs/orpheus-arabic-saudi", name: "Orpheus Arabic Saudi (Groq)" },
     ],
   },
 
