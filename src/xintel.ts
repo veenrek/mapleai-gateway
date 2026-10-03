@@ -426,10 +426,12 @@ export async function handleXProfile(req: Request, res: Response): Promise<void>
     payload: {
       instructions:
         "Build a profile dossier for the listed X handles. Use x_user_search for every handle to get the profile card " +
-        "(name, bio, followers, following, verification, account creation date, location when public), then review recent posts. " +
-        "Reply ONLY with JSON of shape {profiles:[{handle,name,bio,followers,following,verified,created,location,topics,flags" +
+        "and review recent posts. " +
+        "Reply ONLY with JSON of shape {profiles:[{handle,name,bio,followers,verified,topics,flags" +
         (includePosts ? ",recent_posts:[{url,summary,likes}]" : "") + "}]} " +
-        "where topics are <=5 short strings of what the account mostly posts about, flags are factual observations only " +
+        "where followers/verified come from the user card; additionally include following/created/location keys ONLY when " +
+        "the user card actually contains them (omit the key otherwise, never emit null placeholders). " +
+        "topics are <=5 short strings of what the account mostly posts about, flags are factual observations only " +
         "(e.g. \"posts mostly token promotions\", \"account created this month\") with no defamatory guesses" +
         (includePosts ? `, and recent_posts has up to 3 posts from the last ${daysBack} days` : "") + ".",
       input: "Handles: " + body.handles.join(", "),
@@ -449,6 +451,7 @@ interface MediaBody {
   hours_back?: number;
   media_type?: "image" | "video" | "both";
   max_results?: number;
+  mode?: "top" | "latest";
 }
 
 export function validateXMedia(req: Request, res: Response, next: NextFunction): void {
@@ -458,10 +461,11 @@ export function validateXMedia(req: Request, res: Response, next: NextFunction):
     typeof body.query === "string" && body.query.trim().length > 0 && body.query.length <= 500 &&
     (body.hours_back === undefined || (Number.isInteger(body.hours_back) && body.hours_back >= 1 && body.hours_back <= 168)) &&
     (body.media_type === undefined || ["image", "video", "both"].includes(body.media_type)) &&
-    (body.max_results === undefined || (Number.isInteger(body.max_results) && body.max_results >= 1 && body.max_results <= 15));
+    (body.max_results === undefined || (Number.isInteger(body.max_results) && body.max_results >= 1 && body.max_results <= 15)) &&
+    (body.mode === undefined || body.mode === "top" || body.mode === "latest");
   if (!ok) {
     res.status(400).json({ error: {
-      message: "Expected JSON body: {query: string (1..500), hours_back?: 1..168, media_type?: image|video|both, max_results?: 1..15}",
+      message: "Expected JSON body: {query: string (1..500), hours_back?: 1..168, media_type?: image|video|both, max_results?: 1..15, mode?: top|latest}",
       type: "invalid_request",
     } });
     return;
@@ -484,16 +488,18 @@ export async function handleXMedia(req: Request, res: Response): Promise<void> {
   const hoursBack = body.hours_back ?? 24;
   const maxResults = body.max_results ?? 8;
   const mediaType = body.media_type ?? "image";
+  const mode = body.mode ?? "top";
   const dates = dateWindow(Math.ceil(hoursBack / 24));
   await handleXintel(req, res, {
     endpoint: "media",
     object: "x.media",
     timeoutMs: 300_000,
-    meta: { query: body.query.slice(0, 500), hours_back: hoursBack, media_type: mediaType, max_results: maxResults },
+    meta: { query: body.query.slice(0, 500), hours_back: hoursBack, media_type: mediaType, max_results: maxResults, mode },
     quoteUsd: await quoteXMedia(body),
     payload: {
       instructions:
-        "Search X posts matching the query and ANALYZE the media attached to the posts using the media understanding tools " +
+        `Search X posts matching the query with ${mode === "top" ? "mode Top (highest engagement)" : "mode Latest (most recent)"} ` +
+        "and ANALYZE the media attached to the posts using the media understanding tools " +
         "(you have view_image/view_video for every fetched post). For each relevant post describe what is actually visible " +
         "in the image or video (charts, dashboards, memes, screenshots: say what they show, numbers/labels when readable) " +
         "and how it relates to the query. " +

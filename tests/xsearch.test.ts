@@ -65,3 +65,18 @@ test("x/search json posts parser", async () => {
   assert.equal(parseXSearchJsonPosts(JSON.stringify({ output_text: "no json" }), extractJson), undefined);
   assert.equal(parseXSearchJsonPosts("not-json-body", extractJson), undefined);
 });
+
+test("x/search hours_back validation", async () => {
+  const { validateXSearch } = await import("../src/xsearch.ts");
+  const run = (body: unknown): number => {
+    let statusCode = 0; let called = false;
+    validateXSearch({ body } as never, { status(code: number) { statusCode = code; return { json() {} }; } } as never, () => { called = true; });
+    return called ? 200 : statusCode;
+  };
+  assert.equal(run({ query: "q", hours_back: 24 }), 200);
+  assert.equal(run({ query: "q", hours_back: 168 }), 200);
+  assert.equal(run({ query: "q", hours_back: 0 }), 400);
+  assert.equal(run({ query: "q", hours_back: 169 }), 400);
+  assert.equal(run({ query: "q", format: "json", hours_back: 48 }), 200);
+  assert.equal(run({ query: "q", format: "yaml" }), 400);
+});

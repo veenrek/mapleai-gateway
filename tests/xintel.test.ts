@@ -97,3 +97,9 @@ test("media validator + price", () => {
   assert.equal(mediaPrice({}), mediaBaseUsd + mediaPerResultUsd * 8);
   assert.equal(mediaPrice({ max_results: 3 }), mediaBaseUsd + mediaPerResultUsd * 3);
 });
+
+test("media mode param validator", () => {
+  assert.equal(runValidation(validateXMedia, { query: "q", mode: "top" }), 200);
+  assert.equal(runValidation(validateXMedia, { query: "q", mode: "latest" }), 200);
+  assert.equal(runValidation(validateXMedia, { query: "q", mode: "hot" }), 400);
+});

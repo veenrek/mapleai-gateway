@@ -27,6 +27,18 @@ export interface XSearchBody {
   include_web?: boolean;
   instructions?: string;
   format?: "text" | "json";
+  hours_back?: number;
+}
+
+function todayUtc(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function dateWindowX(days: number): { from_date: string; to_date: string } {
+  const to = todayUtc();
+  const from = new Date(to + "T00:00:00Z");
+  from.setUTCDate(from.getUTCDate() - Math.max(0, days));
+  return { from_date: from.toISOString().slice(0, 10), to_date: to };
 }
 
 export function xSearchPriceFor(body: Partial<XSearchBody>): number {
@@ -43,10 +55,11 @@ export function validateXSearch(req: Request, res: Response, next: NextFunction)
       (Number.isInteger(body.max_results) && body.max_results >= 1 && body.max_results <= maxResultsCap)) &&
     (body.include_web === undefined || typeof body.include_web === "boolean") &&
     (body.instructions === undefined || typeof body.instructions === "string") &&
-    (body.format === undefined || body.format === "text" || body.format === "json");
+    (body.format === undefined || body.format === "text" || body.format === "json") &&
+    (body.hours_back === undefined || (Number.isInteger(body.hours_back) && body.hours_back >= 1 && body.hours_back <= 168));
   if (!ok) {
     res.status(400).json({ error: {
-      message: `Expected JSON body: {query: string (1-2000 chars), max_results?: 1..${maxResultsCap}, include_web?: boolean, instructions?: string, format?: "text" | "json"}`,
+      message: `Expected JSON body: {query: string (1-2000 chars), max_results?: 1..${maxResultsCap}, include_web?: boolean, instructions?: string, format?: "text" | "json", hours_back?: 1..168}`,
       type: "invalid_request",
     } });
     return;
@@ -61,7 +74,11 @@ export async function quoteXSearch(body: Partial<XSearchBody>): Promise<string> 
 
 export function fetchXSearch(body: XSearchBody): Promise<globalThis.Response> {
   if (!config.internalComboKey) throw new Error("Combo router credential missing");
-  const tools: Array<Record<string, unknown>> = [{ type: "x_search" }];
+  const xTool: Record<string, unknown> = { type: "x_search" };
+  if (typeof body.hours_back === "number") {
+    Object.assign(xTool, dateWindowX(Math.ceil(body.hours_back / 24)));
+  }
+  const tools: Array<Record<string, unknown>> = [xTool];
   if (body.include_web) tools.push({ type: "web_search" });
   const maxResults = body.max_results ?? 10;
   const instructions =

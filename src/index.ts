@@ -359,6 +359,7 @@ const xSearchDiscovery = declareDiscoveryExtension({
     include_web: { type: "boolean", default: false, description: "Also run a web search alongside X" },
     instructions: { type: "string", description: "Optional extra instructions for the search agent" },
     format: { type: "string", enum: ["text", "json"], default: "text", description: "json returns a validated posts array {url, author, date, text, likes, reposts} instead of a prose summary" },
+    hours_back: { type: "integer", minimum: 1, maximum: 168, description: "Restrict search to the last N hours (date filter on the X side)" },
   } },
   bodyType: "json",
   output: { example: { object: "response", output_text: "...", citations: ["https://x.com/user/status/123"],
@@ -410,10 +411,11 @@ const xProfileSchema = { type: "object", required: ["handles"], properties: {
   days_back: { type: "integer", minimum: 1, maximum: 30, default: 14, description: "Window for recent posts" },
   include_posts: { type: "boolean", default: true, description: "Include up to 3 recent posts per handle" },
 } };
+const xProfileOutputExample = { object: "x.profile", profiles: [{ handle: "base", name: "Base", bio: "...",
+  followers: 1559000, verified: true, topics: ["L2", "builders"], flags: [], recent_posts: [{ url: "https://x.com/base/status/123", summary: "...", likes: 4200 }] }] };
 const xProfileDiscovery = declareDiscoveryExtension({
   input: xProfileExample, inputSchema: xProfileSchema, bodyType: "json",
-  output: { example: { object: "x.profile", profiles: [{ handle: "base", name: "Base", bio: "...",
-    followers: 1100000, following: 42, verified: true, topics: ["L2", "builders"], flags: [], recent_posts: [{ url: "https://x.com/base/status/123", summary: "...", likes: 4200 }] }] } },
+  output: { example: xProfileOutputExample },
 });
 
 const xMediaExample = { query: "base onchain dashboard screenshot", hours_back: 24, media_type: "image", max_results: 8 };
@@ -422,6 +424,7 @@ const xMediaSchema = { type: "object", required: ["query"], properties: {
   hours_back: { type: "integer", minimum: 1, maximum: 168, default: 24 },
   media_type: { type: "string", enum: ["image", "video", "both"], default: "image", description: "Which media understanding to enable (image is cheapest)" },
   max_results: { type: "integer", minimum: 1, maximum: 15, default: 8, description: "Posts analyzed; drives the price" },
+  mode: { type: "string", enum: ["top", "latest"], default: "top", description: "top = highest-engagement posts, latest = freshest" },
 } };
 const xMediaDiscovery = declareDiscoveryExtension({
   input: xMediaExample, inputSchema: xMediaSchema, bodyType: "json",
@@ -2541,6 +2544,7 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
             include_web: { type: "boolean", default: false, description: "Also run web_search alongside X (adds the web surcharge)" },
             instructions: { type: "string", description: "Optional extra instructions for the search agent (e.g. quote posts verbatim, include author/date/likes)" },
             format: { type: "string", enum: ["text", "json"], default: "text", description: "json returns a validated posts array {url, author, date, text, likes, reposts} instead of prose" },
+            hours_back: { type: "integer", minimum: 1, maximum: 168, description: "Restrict search to the last N hours" },
           } } } } },
         responses: { "200": { description: "Responses API object with the summary and citations", content: { "application/json": {
           example: { object: "response", output_text: "AI agents are trending around x402 payments. https://x.com/user/status/123[[1]]",
@@ -2585,13 +2589,13 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
           "402": paidResponses["402"], "502": { description: "Search upstream unavailable or invalid model response" } },
       } } } : {}),
       ...(xSearchEnabled ? { "/v1/x/profile": { post: { summary: "Profile dossier for X handles", operationId: "xProfile",
-        description: "x_user_search dossier per handle: profile card (bio, followers, verification, creation date), posting topics, factual flags and recent posts. Flags are observations only, no bot-score verdicts.",
+        description: "x_user_search dossier per handle: bio, followers and verification from the user card, posting topics, factual flags and recent posts (following/created/location appear only when the card contains them). Flags are observations only, no bot-score verdicts.",
         security: [{ x402: [] }],
         "x-worked-example": workedExample("POST", "/v1/x/profile", xProfileExample, true),
         "x-payment-info": { price: { mode: "dynamic", currency: "USD" }, protocols: [{ x402: {} }] },
         "x-pricing": { unit: "USD per dossier", formula: "base + per_handle * handles", base: profileBaseUsd, perHandle: profilePerHandleUsd, note: "1-5 handles" },
         requestBody: { required: true, content: { "application/json": { example: xProfileExample, schema: xProfileSchema } } },
-        responses: { "200": { description: "Structured profiles", content: { "application/json": { example: { object: "x.profile", profiles: [{ handle: "base", name: "Base", followers: 1100000, verified: true, topics: ["L2", "builders"], flags: [], recent_posts: [{ url: "https://x.com/base/status/123", summary: "...", likes: 4200 }] }] } } } },
+        responses: { "200": { description: "Structured profiles", content: { "application/json": { example: { object: "x.profile", profiles: [{ handle: "base", name: "Base", bio: "...", followers: 1559000, verified: true, topics: ["L2", "builders"], flags: [], recent_posts: [{ url: "https://x.com/base/status/123", summary: "...", likes: 4200 }] }] } } } },
           "400": { description: "Invalid request" },
           "402": paidResponses["402"], "502": { description: "Search upstream unavailable or invalid model response" } },
       } } } : {}),
@@ -2779,7 +2783,7 @@ app.get("/llms.txt", (req: Request, res: Response) => {
           ". Multipart or JSON base64 input; whisper-large-v3* add word timestamps and srt/vtt.",
       ] : []),
      ...(jevEnabled ? ["", "POST " + origin + "/jev", "  Jev structured decisions ($" + jevPricePerMillion?.toFixed(2) + "/1M input tokens plus payment overhead). Send model=jev-latest, state and named questions with type and instructions."] : []),
-      ...(xSearchEnabled ? ["", "POST " + origin + "/v1/x/search", "  Live X/Twitter search via Grok x_search. Price = $" + xSearchBasePriceUsd.toFixed(3) + " + $" + xSearchPerResultUsd.toFixed(4) + " per requested max_result (+$" + xSearchWebPriceUsd.toFixed(2) + " with include_web), plus payment overhead; $" + (xSearchBasePriceUsd + xSearchPerResultUsd * 10).toFixed(3) + " at the default 10 results. Body: {query, max_results?: 1..25, include_web?: bool, instructions?: string}. Returns the Grok answer with direct post citations."] : []),
+      ...(xSearchEnabled ? ["", "POST " + origin + "/v1/x/search", "  Live X/Twitter search via Grok x_search. Price = $" + xSearchBasePriceUsd.toFixed(3) + " + $" + xSearchPerResultUsd.toFixed(4) + " per requested max_result (+$" + xSearchWebPriceUsd.toFixed(2) + " with include_web), plus payment overhead; $" + (xSearchBasePriceUsd + xSearchPerResultUsd * 10).toFixed(3) + " at the default 10 results. Body: {query, max_results?: 1..25, include_web?: bool, instructions?: string, format?: text|json, hours_back?: 1..168}. Returns the Grok answer with direct post citations."] : []),
       ...(xSearchEnabled ? [
         "POST " + origin + "/v1/x/digest",
         "  Digest of specific X handles: key posts with links, likes and reposts per handle, silent handles marked. Price = $" + digestBaseUsd.toFixed(3) + " + $" + digestPerHandleUsd.toFixed(3) + " per handle. Body: {handles, hours_back?: 1..168, max_posts_per_handle?: 1..5, include_media?: bool}.",
@@ -2790,7 +2794,7 @@ app.get("/llms.txt", (req: Request, res: Response) => {
         "POST " + origin + "/v1/x/profile",
         "  Profile dossier for X handles: bio, followers, verification, topics, factual flags and recent posts. Price = $" + profileBaseUsd.toFixed(3) + " + $" + profilePerHandleUsd.toFixed(3) + " per handle. Body: {handles: 1..5, days_back?: 1..30, include_posts?: bool}.",
         "POST " + origin + "/v1/x/media",
-        "  Media radar: image/video understanding of media attached to X posts matching a query. Price = $" + mediaBaseUsd.toFixed(3) + " + $" + mediaPerResultUsd.toFixed(3) + " per analyzed post. Body: {query, hours_back?: 1..168, media_type?: image|video|both, max_results?: 1..15}.",
+        "  Media radar: image/video understanding of media attached to X posts matching a query. Price = $" + mediaBaseUsd.toFixed(3) + " + $" + mediaPerResultUsd.toFixed(3) + " per analyzed post. Body: {query, hours_back?: 1..168, media_type?: image|video|both, max_results?: 1..15, mode?: top|latest}.",
         "POST " + origin + "/v1/web/search",
         "  Live web search via Grok web_search with source citations. Price = $" + webSearchBaseUsd.toFixed(3) + " + $" + webSearchPerResultUsd.toFixed(4) + " per requested max_result. Body: {query, max_results?: 1..25, instructions?: string, allowed_domains?: up to 5}.",
       ] : []),
