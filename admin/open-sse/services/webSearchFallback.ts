@@ -142,14 +142,22 @@ export function supportsNativeWebSearchFallbackBypass({
   sourceFormat,
   targetFormat,
   nativeCodexPassthrough,
+  providerSpecificData,
 }: {
   provider?: string | null;
   sourceFormat?: string | null;
   targetFormat: string | null | undefined;
   nativeCodexPassthrough: boolean;
+  providerSpecificData?: Record<string, unknown> | null;
 }): boolean {
   // Native Codex (OpenAI Responses) passthrough: the upstream runs web search itself.
   if (nativeCodexPassthrough) return true;
+  // Connections flagged with providerSpecificData.nativeWebSearch proxy to an upstream
+  // that executes web_search server-side (e.g. an apiType:"responses" node in front of
+  // xAI/Cavoti). Forward the native tool untouched instead of rewriting it to
+  // omniroute_web_search — the local fallback terminates the turn without a second
+  // model call, so the client would never receive the final message.
+  if (providerSpecificData?.nativeWebSearch === true) return true;
   // Gemini target: the Gemini translator maps built-in web search to googleSearch natively.
   if (targetFormat === FORMATS.GEMINI) return true;
   // Claude -> Claude passthrough: the Anthropic Messages upstream (e.g. a Claude
@@ -171,6 +179,7 @@ export function prepareWebSearchFallbackBody<T extends JsonRecord>(
     sourceFormat?: string | null;
     targetFormat?: string | null;
     nativeCodexPassthrough: boolean;
+    providerSpecificData?: Record<string, unknown> | null;
   }
 ): { body: T; fallback: WebSearchFallbackPlan } {
   const tools = Array.isArray(body.tools) ? body.tools : null;

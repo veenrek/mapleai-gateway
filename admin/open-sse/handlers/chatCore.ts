@@ -1060,6 +1060,7 @@ export async function handleChatCore({
       sourceFormat,
       targetFormat,
       nativeCodexPassthrough,
+      providerSpecificData: credentials?.providerSpecificData as Record<string, unknown> | null | undefined,
     });
   if (webSearchFallbackPlan.enabled) {
     body = bodyWithWebSearchFallback as typeof body;
@@ -2372,7 +2373,14 @@ export async function handleChatCore({
       //   - tools with a name → converted to function format in-place before translation
       //   - tools without a name AND without .function → dropped (unconvertible)
       // This must happen before translateRequest, which validates and throws on unknown types.
-      if (provider?.startsWith("openai-compatible-") && Array.isArray(translatedBody.tools)) {
+      // Nodes with apiType:"responses" implement the Responses API with built-in server
+      // tools (x_search, mcp, local_shell, ...): skip the chat-shape coercion so the
+      // Responses payload passes through unchanged.
+      if (
+        provider?.startsWith("openai-compatible-") &&
+        targetFormat !== FORMATS.OPENAI_RESPONSES &&
+        Array.isArray(translatedBody.tools)
+      ) {
         const before = (translatedBody.tools as unknown[]).length;
         translatedBody.tools = (translatedBody.tools as Record<string, unknown>[])
           .filter((t) => !t.type || t.type === "function" || !!t.function || !!t.name)
