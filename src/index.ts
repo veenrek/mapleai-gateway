@@ -22,8 +22,9 @@ import { prepaidBypassMiddleware } from "./prepaid-bypass.js";
 import { fetchUpstreamChat } from "./upstream.js";
 import { fetchImage, imageModels, imageRates, imagesEnabled, quoteImage, validateImage, type ImageKind, type ImageRequest } from "./images.js";
 import { fetchJev, jevEnabled, jevModel, jevPricePerMillion, quoteJev, recordJevData, validateJev } from "./jev.js";
-import { fetchXSearch, quoteXSearch, validateXSearch, xSearchBasePriceUsd, xSearchEnabled, xSearchModel, xSearchPerResultUsd, xSearchWebPriceUsd } from "./xsearch.js";
-import { digestBaseUsd, digestMediaUsd, digestPerHandleUsd, factcheckBaseUsd, factcheckPerSourceUsd, handleXDigest, handleXFactcheck, handleXSentiment, quoteXDigest, quoteXFactcheck, quoteXSentiment, sentimentBaseUsd, sentimentPerDayUsd, sentimentPerExampleUsd, validateXDigest, validateXFactcheck, validateXSentiment } from "./xintel.js";
+import { fetchXSearch, parseXSearchJsonPosts, quoteXSearch, validateXSearch, xSearchBasePriceUsd, xSearchEnabled, xSearchModel, xSearchPerResultUsd, xSearchWebPriceUsd } from "./xsearch.js";
+import { digestBaseUsd, digestMediaUsd, digestPerHandleUsd, extractJson, factcheckBaseUsd, factcheckPerSourceUsd, handleXDigest, handleXFactcheck, handleXMedia, handleXProfile, handleXSentiment, mediaBaseUsd, mediaPerResultUsd, profileBaseUsd, profilePerHandleUsd, quoteXDigest, quoteXFactcheck, quoteXMedia, quoteXProfile, quoteXSentiment, sentimentBaseUsd, sentimentPerDayUsd, sentimentPerExampleUsd, validateXDigest, validateXFactcheck, validateXMedia, validateXProfile, validateXSentiment } from "./xintel.js";
+import { fetchWebSearch, quoteWebSearch, validateWebSearch, webSearchBaseUsd, webSearchModel, webSearchPerResultUsd } from "./websearch.js";
 import { agentsEnginePricing, agentsExecuteEnabled, codeExecEnabled, codeExecMaxPerTask, codeExecPerCallUsd, handleAgentsExecute, quoteAgentsExecute, validateAgentsExecute } from "./agents.js";
 import { freeGptOssEnabled, freeGptOssModel, freeQuotaSnapshot, handleFreeGptOssChat } from "./free-gptoss.js";
 import {
@@ -357,6 +358,7 @@ const xSearchDiscovery = declareDiscoveryExtension({
     max_results: { type: "integer", minimum: 1, maximum: 25, default: 10, description: "Maximum posts cited" },
     include_web: { type: "boolean", default: false, description: "Also run a web search alongside X" },
     instructions: { type: "string", description: "Optional extra instructions for the search agent" },
+    format: { type: "string", enum: ["text", "json"], default: "text", description: "json returns a validated posts array {url, author, date, text, likes, reposts} instead of a prose summary" },
   } },
   bodyType: "json",
   output: { example: { object: "response", output_text: "...", citations: ["https://x.com/user/status/123"],
@@ -400,6 +402,44 @@ const xFactcheckDiscovery = declareDiscoveryExtension({
   input: xFactcheckExample, inputSchema: xFactcheckSchema, bodyType: "json",
   output: { example: { object: "x.factcheck", claim: "...", verdict: "confirmed", confidence: "high", summary: "...",
     evidence_for: [{ url: "https://x.com/user/status/123", source_type: "x", note: "..." }], evidence_against: [] } },
+});
+
+const xProfileExample = { handles: ["base", "jessepollak"], days_back: 14, include_posts: true };
+const xProfileSchema = { type: "object", required: ["handles"], properties: {
+  handles: { type: "array", minItems: 1, maxItems: 5, items: { type: "string", pattern: "^@?[A-Za-z0-9_]{1,15}$" }, description: "X handles to profile (with or without @)" },
+  days_back: { type: "integer", minimum: 1, maximum: 30, default: 14, description: "Window for recent posts" },
+  include_posts: { type: "boolean", default: true, description: "Include up to 3 recent posts per handle" },
+} };
+const xProfileDiscovery = declareDiscoveryExtension({
+  input: xProfileExample, inputSchema: xProfileSchema, bodyType: "json",
+  output: { example: { object: "x.profile", profiles: [{ handle: "base", name: "Base", bio: "...",
+    followers: 1100000, following: 42, verified: true, topics: ["L2", "builders"], flags: [], recent_posts: [{ url: "https://x.com/base/status/123", summary: "...", likes: 4200 }] }] } },
+});
+
+const xMediaExample = { query: "base onchain dashboard screenshot", hours_back: 24, media_type: "image", max_results: 8 };
+const xMediaSchema = { type: "object", required: ["query"], properties: {
+  query: { type: "string", maxLength: 500 },
+  hours_back: { type: "integer", minimum: 1, maximum: 168, default: 24 },
+  media_type: { type: "string", enum: ["image", "video", "both"], default: "image", description: "Which media understanding to enable (image is cheapest)" },
+  max_results: { type: "integer", minimum: 1, maximum: 15, default: 8, description: "Posts analyzed; drives the price" },
+} };
+const xMediaDiscovery = declareDiscoveryExtension({
+  input: xMediaExample, inputSchema: xMediaSchema, bodyType: "json",
+  output: { example: { object: "x.media", results: [{ url: "https://x.com/user/status/123", media_type: "image",
+    description: "Line chart of daily transactions, rising from 2M to 6M", relevance: "Shows adoption growth asked about", likes: 920 }] } },
+});
+
+const webSearchExample = { query: "x402 facilitator comparison", max_results: 10 };
+const webSearchSchema = { type: "object", required: ["query"], properties: {
+  query: { type: "string", maxLength: 2000 },
+  max_results: { type: "integer", minimum: 1, maximum: 25, default: 10, description: "Sources cited; drives the price" },
+  instructions: { type: "string", description: "Optional extra instructions for the search agent" },
+  allowed_domains: { type: "array", maxItems: 5, items: { type: "string" }, description: "Restrict search to these domains (e.g. [\"coindesk.com\"])" },
+} };
+const webSearchDiscovery = declareDiscoveryExtension({
+  input: webSearchExample, inputSchema: webSearchSchema, bodyType: "json",
+  output: { example: { object: "response", output_text: "...", citations: ["https://example.com/article"],
+    usage: { input_tokens: 900, output_tokens: 250 } } },
 });
 
 const speechExample = { model: speechModels[0] ?? "tts-1", input: "Hello from MapleAI", voice: "alloy", response_format: "wav" };
@@ -488,6 +528,12 @@ const PAID_ROUTES = {
     xSentimentDiscovery, (context) => quoteXSentiment(requestBody(context) as Parameters<typeof quoteXSentiment>[0]), false, false, ["AI", "search", "x", "twitter", "sentiment", "analytics"]) } : {}),
   ...(xSearchEnabled ? { "POST /v1/x/factcheck": paidRoute("Factcheck a claim against X posts and web sources: verdict, confidence and evidence for/against",
     xFactcheckDiscovery, (context) => quoteXFactcheck(requestBody(context) as Parameters<typeof quoteXFactcheck>[0]), false, false, ["AI", "search", "x", "twitter", "factcheck", "verification"]) } : {}),
+  ...(xSearchEnabled ? { "POST /v1/x/profile": paidRoute(`Profile dossier for X handles: bio, followers, topics, flags and recent posts; $${profileBaseUsd} + $${profilePerHandleUsd} per handle`,
+    xProfileDiscovery, (context) => quoteXProfile(requestBody(context) as Parameters<typeof quoteXProfile>[0]), false, false, ["AI", "search", "x", "twitter", "profile", "osint"]) } : {}),
+  ...(xSearchEnabled ? { "POST /v1/x/media": paidRoute("Media radar over X posts: image/video understanding of attached media with descriptions and links",
+    xMediaDiscovery, (context) => quoteXMedia(requestBody(context) as Parameters<typeof quoteXMedia>[0]), false, false, ["AI", "search", "x", "twitter", "media", "images", "video"]) } : {}),
+  ...(xSearchEnabled ? { "POST /v1/web/search": paidRoute(`Live web search via Grok web_search, summarized answer with source citations; $${webSearchBaseUsd} + $${webSearchPerResultUsd} per requested max_result`,
+    webSearchDiscovery, (context) => quoteWebSearch(requestBody(context) as Parameters<typeof quoteWebSearch>[0]), false, false, ["AI", "search", "web"]) } : {}),
   ...(agentsExecuteEnabled ? { "POST /v1/agents/execute": paidRoute("Autonomous agent execution (multi-step reasoning + tools). Engines: cheap agents/oss-20b or premium agents/gpt-6-sol; stream=true streams SSE step events. Ceiling = engine base + max_steps x step" + (codeExecEnabled ? " + code_exec calls ($0.002 each, max 3 per task)" : "") + " (charged_ceiling_usd).",
     agentsDiscovery, (context) => quoteAgentsExecute(requestBody(context) as Parameters<typeof quoteAgentsExecute>[0]), false, true, ["AI", "agents", "automation", "tools"]) } : {}),
   ...(prepaidCodesEnabled ? {
@@ -537,6 +583,9 @@ if (xSearchEnabled) {
   app.post("/v1/x/digest", validateXDigest);
   app.post("/v1/x/sentiment", validateXSentiment);
   app.post("/v1/x/factcheck", validateXFactcheck);
+  app.post("/v1/x/profile", validateXProfile);
+  app.post("/v1/x/media", validateXMedia);
+  app.post("/v1/web/search", validateWebSearch);
 }
 if (agentsExecuteEnabled) app.post("/v1/agents/execute", validateAgentsExecute);
 async function handlePrepaidCodePurchase(req: Request, res: Response): Promise<void> {
@@ -1056,14 +1105,16 @@ if (xSearchEnabled) {
   app.post("/v1/x/digest", (req, res) => { void handleXDigest(req, res); });
   app.post("/v1/x/sentiment", (req, res) => { void handleXSentiment(req, res); });
   app.post("/v1/x/factcheck", (req, res) => { void handleXFactcheck(req, res); });
+  app.post("/v1/x/profile", (req, res) => { void handleXProfile(req, res); });
+  app.post("/v1/x/media", (req, res) => { void handleXMedia(req, res); });
 }
 
-if (xSearchEnabled) app.post("/v1/x/search", async (req, res) => {
+if (xSearchEnabled) app.post("/v1/web/search", async (req, res) => {
   try {
-    const upstream = await fetchXSearch(req.body as Parameters<typeof fetchXSearch>[0]);
+    const upstream = await fetchWebSearch(req.body as Parameters<typeof fetchWebSearch>[0]);
     const raw = await upstream.text();
     if (!upstream.ok) {
-      console.error("[xsearch] combo router HTTP " + upstream.status);
+      console.error("[websearch] combo router HTTP " + upstream.status);
       res.status(upstream.status).type("application/json").send(raw);
       return;
     }
@@ -1073,8 +1124,46 @@ if (xSearchEnabled) app.post("/v1/x/search", async (req, res) => {
       res.status(502).json({ error: { message: "Unexpected search response", type: "upstream_error" } });
       return;
     }
+    recordUsage({ ts: new Date().toISOString(), model: webSearchModel,
+      payer: extractPayer(req.get("payment-signature")), upstreamStatus: upstream.status,
+      quotedUsd: await quoteWebSearch(req.body as Parameters<typeof quoteWebSearch>[0]) });
+    res.status(200).json(data);
+  } catch (error) {
+    console.error("[websearch] request failed:", error instanceof Error ? error.name : "unknown");
+    res.status(502).json({ error: { message: "Web search request failed", type: "upstream_error" } });
+  }
+});
+
+if (xSearchEnabled) app.post("/v1/x/search", async (req, res) => {
+  const body = req.body as Parameters<typeof fetchXSearch>[0];
+  try {
+    const upstream = await fetchXSearch(body);
+    const raw = await upstream.text();
+    if (!upstream.ok) {
+      console.error("[xsearch] combo router HTTP " + upstream.status);
+      res.status(upstream.status).type("application/json").send(raw);
+      return;
+    }
+    if (body.format === "json") {
+      const parsed = parseXSearchJsonPosts(raw, extractJson);
+      if (!parsed) {
+        console.error("[xsearch] model did not return the posts JSON shape");
+        res.status(502).json({ error: { message: "Search model returned an invalid structured response", type: "search_invalid_response" } });
+        return;
+      }
+      recordUsage({ ts: new Date().toISOString(), model: xSearchModel,
+        payer: extractPayer(req.get("payment-signature")), upstreamStatus: upstream.status, quotedUsd: await quoteXSearch(body) });
+      res.status(200).json({ object: "x.search", query: body.query, ...parsed });
+      return;
+    }
+    let data: unknown;
+    try { data = JSON.parse(raw); } catch { data = undefined; }
+    if (!data || typeof data !== "object") {
+      res.status(502).json({ error: { message: "Unexpected search response", type: "upstream_error" } });
+      return;
+    }
     recordUsage({ ts: new Date().toISOString(), model: xSearchModel,
-      payer: extractPayer(req.get("payment-signature")), upstreamStatus: upstream.status, quotedUsd: await quoteXSearch(req.body as Parameters<typeof quoteXSearch>[0]) });
+      payer: extractPayer(req.get("payment-signature")), upstreamStatus: upstream.status, quotedUsd: await quoteXSearch(body) });
     res.status(200).json(data);
   } catch (error) {
     console.error("[xsearch] request failed:", error instanceof Error ? error.name : "unknown");
@@ -1321,7 +1410,19 @@ app.get("/.well-known/x402", (req: Request, res: Response) => {
       { method: "POST", path: "/v1/x/factcheck", description: "Factcheck a claim against X posts and web sources: verdict, confidence, evidence for and against",
         price: "$" + factcheckBaseUsd.toFixed(3) + " + $" + factcheckPerSourceUsd.toFixed(3) + " per source slot",
         tags: ["search", "x", "twitter", "factcheck", "verification"], pricedBy: "base + per evidence source slot, plus payment overhead",
-        exampleBody: xFactcheckExample }] : []),
+        exampleBody: xFactcheckExample },
+      { method: "POST", path: "/v1/x/profile", description: "Profile dossier for X handles: bio, followers, topics, flags, recent posts",
+        price: "$" + profileBaseUsd.toFixed(3) + " + $" + profilePerHandleUsd.toFixed(3) + " per handle",
+        tags: ["search", "x", "twitter", "profile", "osint"], pricedBy: "base + per handle, plus payment overhead",
+        exampleBody: xProfileExample },
+      { method: "POST", path: "/v1/x/media", description: "Media radar: image/video understanding of media attached to X posts",
+        price: "$" + mediaBaseUsd.toFixed(3) + " + $" + mediaPerResultUsd.toFixed(3) + " per analyzed post",
+        tags: ["search", "x", "twitter", "media", "images"], pricedBy: "base + per analyzed post, plus payment overhead",
+        exampleBody: xMediaExample },
+      { method: "POST", path: "/v1/web/search", description: "Live web search via Grok web_search with source citations",
+        price: "$" + webSearchBaseUsd.toFixed(3) + " + $" + webSearchPerResultUsd.toFixed(4) + " per requested max_result",
+        tags: ["search", "web"], pricedBy: "base + per requested max_result, plus payment overhead",
+        exampleBody: webSearchExample }] : []),
       ...(agentsExecuteEnabled ? [{ method: "POST", path: "/v1/agents/execute", description: "Autonomous agent execution (multi-step reasoning + tools" + (codeExecEnabled ? " incl. sandboxed code_exec" : "") + ", SSE step events with stream=true). Engines: agents/oss-20b (cheap), agents/gpt-6-sol (premium)",
         price: chatPriceDisplay + " + engine base ($0.002/$0.004) + per-step ($0.0005/$0.004)" + (codeExecEnabled ? " + code_exec $0.002/call" : "") + " ceiling",
         tags: ["agents", "automation", "tools"], pricedBy: "settlement overhead + engine base fee + per-step price" + (codeExecEnabled ? ", code_exec $0.002/call (max 3 per task)" : "") + ", charged at the max_steps ceiling", exampleBody: agentsExample }] : []),
@@ -1679,6 +1780,33 @@ app.get("/service-endpoints.json", (req: Request, res: Response) => {
       pricing: { kind: "formula", formula: "base + per_source * max_sources",
         baseUsd: factcheckBaseUsd, perSourceUsd: factcheckPerSourceUsd, overheadUsd: config.minChargeUsd },
       example: xFactcheckExample,
+    });
+    endpoints.push({
+      method: "POST",
+      path: "/v1/x/profile",
+      access: "x402",
+      description: "Profile dossier for X handles: bio, followers, verification, topics, factual flags, recent posts",
+      pricing: { kind: "formula", formula: "base + per_handle * handles",
+        baseUsd: profileBaseUsd, perHandleUsd: profilePerHandleUsd, overheadUsd: config.minChargeUsd },
+      example: xProfileExample,
+    });
+    endpoints.push({
+      method: "POST",
+      path: "/v1/x/media",
+      access: "x402",
+      description: "Media radar: image/video understanding of media attached to X posts matching a query",
+      pricing: { kind: "formula", formula: "base + per_result * max_results",
+        baseUsd: mediaBaseUsd, perResultUsd: mediaPerResultUsd, overheadUsd: config.minChargeUsd },
+      example: xMediaExample,
+    });
+    endpoints.push({
+      method: "POST",
+      path: "/v1/web/search",
+      access: "x402",
+      description: "Live web search via Grok web_search with source citations; optional domain restriction",
+      pricing: { kind: "formula", formula: "base + per_result * max_results",
+        baseUsd: webSearchBaseUsd, perResultUsd: webSearchPerResultUsd, overheadUsd: config.minChargeUsd },
+      example: webSearchExample,
     });
   }
 
@@ -2412,6 +2540,7 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
             max_results: { type: "integer", minimum: 1, maximum: 25, default: 10, description: "Maximum posts cited; drives the price" },
             include_web: { type: "boolean", default: false, description: "Also run web_search alongside X (adds the web surcharge)" },
             instructions: { type: "string", description: "Optional extra instructions for the search agent (e.g. quote posts verbatim, include author/date/likes)" },
+            format: { type: "string", enum: ["text", "json"], default: "text", description: "json returns a validated posts array {url, author, date, text, likes, reposts} instead of prose" },
           } } } } },
         responses: { "200": { description: "Responses API object with the summary and citations", content: { "application/json": {
           example: { object: "response", output_text: "AI agents are trending around x402 payments. https://x.com/user/status/123[[1]]",
@@ -2454,6 +2583,40 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
         responses: { "200": { description: "Structured factcheck", content: { "application/json": { example: { object: "x.factcheck", claim: "...", verdict: "confirmed", confidence: "high", summary: "...", evidence_for: [{ url: "https://x.com/user/status/123", source_type: "x", note: "..." }], evidence_against: [] } } } },
           "400": { description: "Invalid request" },
           "402": paidResponses["402"], "502": { description: "Search upstream unavailable or invalid model response" } },
+      } } } : {}),
+      ...(xSearchEnabled ? { "/v1/x/profile": { post: { summary: "Profile dossier for X handles", operationId: "xProfile",
+        description: "x_user_search dossier per handle: profile card (bio, followers, verification, creation date), posting topics, factual flags and recent posts. Flags are observations only, no bot-score verdicts.",
+        security: [{ x402: [] }],
+        "x-worked-example": workedExample("POST", "/v1/x/profile", xProfileExample, true),
+        "x-payment-info": { price: { mode: "dynamic", currency: "USD" }, protocols: [{ x402: {} }] },
+        "x-pricing": { unit: "USD per dossier", formula: "base + per_handle * handles", base: profileBaseUsd, perHandle: profilePerHandleUsd, note: "1-5 handles" },
+        requestBody: { required: true, content: { "application/json": { example: xProfileExample, schema: xProfileSchema } } },
+        responses: { "200": { description: "Structured profiles", content: { "application/json": { example: { object: "x.profile", profiles: [{ handle: "base", name: "Base", followers: 1100000, verified: true, topics: ["L2", "builders"], flags: [], recent_posts: [{ url: "https://x.com/base/status/123", summary: "...", likes: 4200 }] }] } } } },
+          "400": { description: "Invalid request" },
+          "402": paidResponses["402"], "502": { description: "Search upstream unavailable or invalid model response" } },
+      } } } : {}),
+      ...(xSearchEnabled ? { "/v1/x/media": { post: { summary: "Media radar over X posts", operationId: "xMedia",
+        description: "Searches X posts matching the query and analyzes attached media with view_image/view_video: what the chart/meme/screenshot shows (numbers and labels when readable), with post links. media_type video costs more latency.",
+        security: [{ x402: [] }],
+        "x-worked-example": workedExample("POST", "/v1/x/media", xMediaExample, true),
+        "x-payment-info": { price: { mode: "dynamic", currency: "USD" }, protocols: [{ x402: {} }] },
+        "x-pricing": { unit: "USD per scan", formula: "base + per_result * max_results", base: mediaBaseUsd, perResult: mediaPerResultUsd, note: "max 15 posts" },
+        requestBody: { required: true, content: { "application/json": { example: xMediaExample, schema: xMediaSchema } } },
+        responses: { "200": { description: "Structured media findings", content: { "application/json": { example: { object: "x.media", results: [{ url: "https://x.com/user/status/123", media_type: "image", description: "Line chart rising from 2M to 6M transactions", relevance: "Answers the adoption question", likes: 920 }] } } } },
+          "400": { description: "Invalid request" },
+          "402": paidResponses["402"], "502": { description: "Search upstream unavailable or invalid model response" } },
+      } } } : {}),
+      ...(xSearchEnabled ? { "/v1/web/search": { post: { summary: "Live web search", operationId: "webSearch",
+        description: "Server-side Grok web_search: summarized answer with direct source links; allowed_domains restricts the crawl to up to 5 domains.",
+        security: [{ x402: [] }],
+        "x-worked-example": workedExample("POST", "/v1/web/search", webSearchExample, true),
+        "x-payment-info": { price: { mode: "dynamic", currency: "USD" }, protocols: [{ x402: {} }] },
+        "x-pricing": { unit: "USD per query", formula: "base + per_result * max_results", base: webSearchBaseUsd, perResult: webSearchPerResultUsd, note: "max_results defaults to 10, max 25" },
+        requestBody: { required: true, content: { "application/json": { example: webSearchExample, schema: webSearchSchema } } },
+        responses: { "200": { description: "Responses API object with summary and citations", content: { "application/json": {
+          example: { object: "response", output_text: "...", citations: ["https://example.com/article"], usage: { input_tokens: 900, output_tokens: 250 } } } } },
+          "400": { description: "Invalid request" },
+          "402": paidResponses["402"], "502": { description: "Search upstream unavailable" } },
       } } } : {}),
       ...(agentsExecuteEnabled ? { "/v1/agents/execute": { post: { summary: "Autonomous agent execution", operationId: "executeAgent",
         description: "Sends a natural-language task to a multi-step agent engine (cheap agents/oss-20b or premium agents/gpt-6-sol) with calculator, fetch_url, web_search, data_analysis" + (codeExecEnabled ? " and sandboxed code_exec (python/javascript/typescript)" : "") + " tools. stream=true streams SSE step events (open, step, done). Charged at the max_steps ceiling: settlement overhead + engine base ($0.002 / $0.004) + per-step ($0.0005 / $0.004)" + (codeExecEnabled ? " + code_exec $0.002 per call (max 3 per task)" : "") + ", default 8, maximum 20 steps. Returns the agent.execution object with the full step trace, sources, usage and charged_ceiling_usd. Per-step timeouts finalize as partial instead of 502.",
@@ -2624,6 +2787,12 @@ app.get("/llms.txt", (req: Request, res: Response) => {
         "  X sentiment for a topic: verdict, -1..1 score, bullish/bearish/neutral distribution, drivers and evidence posts. Price = $" + sentimentBaseUsd.toFixed(3) + " + $" + sentimentPerExampleUsd.toFixed(4) + " per example + $" + sentimentPerDayUsd.toFixed(3) + " per extra day of window. Body: {topic, hours_back?: 1..168, max_examples?: 1..10, min_engagement?: int}.",
         "POST " + origin + "/v1/x/factcheck",
         "  Factcheck a claim against X posts and web sources: verdict (confirmed/refuted/mixed/unverified), confidence, evidence for and against. Price = $" + factcheckBaseUsd.toFixed(3) + " + $" + factcheckPerSourceUsd.toFixed(3) + " per source slot. Body: {claim, max_sources?: 1..10, days_back?: 1..30}.",
+        "POST " + origin + "/v1/x/profile",
+        "  Profile dossier for X handles: bio, followers, verification, topics, factual flags and recent posts. Price = $" + profileBaseUsd.toFixed(3) + " + $" + profilePerHandleUsd.toFixed(3) + " per handle. Body: {handles: 1..5, days_back?: 1..30, include_posts?: bool}.",
+        "POST " + origin + "/v1/x/media",
+        "  Media radar: image/video understanding of media attached to X posts matching a query. Price = $" + mediaBaseUsd.toFixed(3) + " + $" + mediaPerResultUsd.toFixed(3) + " per analyzed post. Body: {query, hours_back?: 1..168, media_type?: image|video|both, max_results?: 1..15}.",
+        "POST " + origin + "/v1/web/search",
+        "  Live web search via Grok web_search with source citations. Price = $" + webSearchBaseUsd.toFixed(3) + " + $" + webSearchPerResultUsd.toFixed(4) + " per requested max_result. Body: {query, max_results?: 1..25, instructions?: string, allowed_domains?: up to 5}.",
       ] : []),
       ...(agentsExecuteEnabled ? ["", "POST " + origin + "/v1/agents/execute", "  Autonomous agent execution with two engines (cheap agents/oss-20b, premium agents/gpt-6-sol):", "  multi-step reasoning with calculator, fetch_url, web_search, data_analysis" + (codeExecEnabled ? " and code_exec (sandboxed python/javascript/typescript)" : "") + " tools; stream=true streams SSE step events.", "  Ceiling = engine base ($0.002/$0.004) + per-step ($0.0005/$0.004)" + (codeExecEnabled ? " + code_exec $0.002/call (max 3 per task)" : "") + ", default 8, max 20 steps,", "  shown as charged_ceiling_usd. Step timeouts finalize as partial, never a bare 502."] : []),
       ...(embeddingsEnabled ? ["", "POST " + origin + "/v1/embeddings", "  Free NVIDIA embeddings with nvidia/nemotron-3-embed-1b."] : []),

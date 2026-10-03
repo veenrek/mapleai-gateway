@@ -48,3 +48,20 @@ test("price scales with max_results and include_web", () => {
   assert.equal(xSearchPriceFor({ query: "q", max_results: 25 }), xSearchBasePriceUsd + xSearchPerResultUsd * 25);
   assert.equal(xSearchPriceFor({ query: "q", include_web: true }), def + xSearchWebPriceUsd);
 });
+
+test("web search price", async () => {
+  const { webSearchPriceFor, webSearchBaseUsd, webSearchPerResultUsd } = await import("../src/websearch.ts");
+  assert.equal(webSearchPriceFor({ query: "q" }), webSearchBaseUsd + webSearchPerResultUsd * 10);
+  assert.equal(webSearchPriceFor({ query: "q", max_results: 25 }), webSearchBaseUsd + webSearchPerResultUsd * 25);
+});
+
+test("x/search json posts parser", async () => {
+  const { parseXSearchJsonPosts } = await import("../src/xsearch.ts");
+  const { extractJson } = await import("../src/xintel.ts");
+  const good = JSON.stringify({ output_text: '{"posts":[{"url":"https://x.com/a/status/1","author":"a"}]}' });
+  assert.ok(parseXSearchJsonPosts(good, extractJson));
+  const fenced = JSON.stringify({ output: [{ type: "message", content: [{ type: "output_text", text: '```json\n{"posts":[]}\n```' }] }] });
+  assert.ok(parseXSearchJsonPosts(fenced, extractJson));
+  assert.equal(parseXSearchJsonPosts(JSON.stringify({ output_text: "no json" }), extractJson), undefined);
+  assert.equal(parseXSearchJsonPosts("not-json-body", extractJson), undefined);
+});

@@ -4,6 +4,8 @@ import assert from "node:assert/strict";
 const {
   validateXDigest, validateXSentiment, validateXFactcheck,
   digestPrice, sentimentPrice, factcheckPrice, extractJson,
+  validateXProfile, validateXMedia, profilePrice, mediaPrice,
+  profileBaseUsd, profilePerHandleUsd, mediaBaseUsd, mediaPerResultUsd,
   digestBaseUsd, digestPerHandleUsd, digestMediaUsd,
   sentimentBaseUsd, sentimentPerExampleUsd, sentimentPerDayUsd,
   factcheckBaseUsd, factcheckPerSourceUsd,
@@ -74,4 +76,24 @@ test("extractJson tolerates fences and prose", () => {
   assert.deepEqual(extractJson('here is the answer: {"a":2} hope it helps'), { a: 2 });
   assert.equal(extractJson("no json at all"), undefined);
   assert.equal(extractJson("{broken"), undefined);
+});
+
+test("profile validator + price", () => {
+  assert.equal(runValidation(validateXProfile, { handles: ["base"] }), 200);
+  assert.equal(runValidation(validateXProfile, { handles: ["@VitalikButerin"], days_back: 30, include_posts: false }), 200);
+  assert.equal(runValidation(validateXProfile, { handles: [] }), 400);
+  assert.equal(runValidation(validateXProfile, { handles: ["a","b","c","d","e","f"] }), 400);
+  assert.equal(runValidation(validateXProfile, { handles: ["base"], days_back: 31 }), 400);
+  assert.equal(profilePrice({ handles: ["a", "b"] }), profileBaseUsd + profilePerHandleUsd * 2);
+});
+
+test("media validator + price", () => {
+  assert.equal(runValidation(validateXMedia, { query: "dashboard screenshots" }), 200);
+  assert.equal(runValidation(validateXMedia, { query: "q", media_type: "both", max_results: 15, hours_back: 168 }), 200);
+  assert.equal(runValidation(validateXMedia, {}), 400);
+  assert.equal(runValidation(validateXMedia, { query: "x".repeat(501) }), 400);
+  assert.equal(runValidation(validateXMedia, { query: "q", media_type: "gif" }), 400);
+  assert.equal(runValidation(validateXMedia, { query: "q", max_results: 16 }), 400);
+  assert.equal(mediaPrice({}), mediaBaseUsd + mediaPerResultUsd * 8);
+  assert.equal(mediaPrice({ max_results: 3 }), mediaBaseUsd + mediaPerResultUsd * 3);
 });
