@@ -8,13 +8,14 @@
 - **Compatibility**: OpenAI-compatible API
 
 ## Available Models
-All models from Anthropic's Claude family:
-- claude-opus-5 (1M context, $5/$25 per 1M tokens)
-- claude-sonnet-5 (1M context, $2/$10 per 1M tokens)
-- claude-haiku-4.5 (200K context, $1/$5 per 1M tokens)
-- claude-fable-5.1 (1M context, $10/$50 per 1M tokens)
-- claude-opus-4.8, claude-opus-4.7, claude-opus-4.5
-- claude-sonnet-4.6, claude-sonnet-4.5
+Claude models (priced at half of BlockRun, USD per 1M in/out tokens):
+- claude-sonnet-5 (1M context, $1/$5)
+- claude-opus-4-8 (1M context, $2.50/$12.50)
+- claude-opus-5 (1M context, $2.50/$12.50)
+
+Plus the GPT family (openai/gpt-5.6-sol, openai/gpt-5.6-terra, openai/gpt-6-luna, openai/gpt-6-sol).
+Catalog ids use the `anthropic/...` prefix; bare claude-* ids resolve too.
+Native Anthropic Messages API: `POST /v1/messages` (system prompt, content blocks, SSE events, required max_tokens).
 
 Full catalog: GET https://sol.mapleai.shop/v1/models
 

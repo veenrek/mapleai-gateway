@@ -1720,6 +1720,13 @@ app.get("/.well-known/agent-card.json", (req: Request, res: Response) => {
       ["chat", "responses"],
       `POST ${origin}/api/v1/responses {"model":"${models[0]?.id}","input":"Hello"}`,
     ),
+    skill(
+      "anthropic-message",
+      "Anthropic Messages API (Claude)",
+      "Native Anthropic Messages API for claude-sonnet-5, claude-opus-4-8 and claude-opus-5: system prompt, content blocks, SSE events, required max_tokens. Same per-token x402 pricing.",
+      ["chat", "anthropic", "claude"],
+      `POST ${origin}/v1/messages {"model":"claude-sonnet-5","max_tokens":64,"messages":[{"role":"user","content":"Hello"}]}`,
+    ),
   ];
   if (embeddingsEnabled) {
     skills.push(skill(
