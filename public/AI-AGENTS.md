@@ -8,10 +8,12 @@
 - **Compatibility**: OpenAI-compatible API
 
 ## Available Models
-Claude models (priced at half of BlockRun, USD per 1M in/out tokens):
-- claude-sonnet-5 (1M context, $1/$5)
-- claude-opus-4-8 (1M context, $2.50/$12.50)
-- claude-opus-5 (1M context, $2.50/$12.50)
+Claude lineup (priced at half of BlockRun, USD per 1M in/out tokens):
+- claude-haiku-4-5 ($0.50/$2.50)
+- claude-sonnet-4-5, claude-sonnet-4-6 ($1.50/$7.50)
+- claude-sonnet-5, claude-sonnet-5-5 ($1/$5)
+- claude-opus-4-6, claude-opus-4-7, claude-opus-4-8, claude-opus-5 ($2.50/$12.50)
+- claude-opus-5-5 ($2/$10)
 
 Plus the GPT family (openai/gpt-5.6-sol, openai/gpt-5.6-terra, openai/gpt-6-luna, openai/gpt-6-sol).
 Catalog ids use the `anthropic/...` prefix; bare claude-* ids resolve too.

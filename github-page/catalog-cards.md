@@ -106,7 +106,7 @@
 
 - **Endpoint**: POST https://sol.mapleai.shop/v1/messages (и зеркала base/polygon/arc)
 - **Tags**: anthropic, claude, messages-api, llm, x402
-- **Price**: финальный чек — ровно половина BlockRun: claude-sonnet-5 $1/$5, claude-opus-4-8 и claude-opus-5 $2.50/$12.50 за 1M in/out (+ ~$0.001 settlement overhead)
+- **Price**: финальный чек — ровно половина BlockRun: haiku-4-5 $0.50/$2.50, sonnet-4.5/4.6 $1.50/$7.50, sonnet-5/5.5 $1/$5, opus-4.6/4.7/4.8/5 $2.50/$12.50, opus-5.5 $2/$10 за 1M in/out (+ settlement fee $0.001–0.0055 по сети)
 - **Description**: Native Anthropic Messages API (content blocks, system prompt,
   anthropic SSE stream events, обязательный max_tokens). Подходит для Anthropic SDK и
   claude-совместимых агентов: baseURL = https://sol.mapleai.shop, оплата x402 через PAYMENT-SIGNATURE.

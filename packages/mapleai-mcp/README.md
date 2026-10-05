@@ -49,7 +49,7 @@ Tools:
 | `embed_text` | free | 2048-dim embeddings (query/passage) |
 | `prepaid_status` | free | Prepaid key validity and remaining tokens |
 | `chat_completion` | x402 per call | GPT chat completions |
-| `claude_message` | x402 per call | Claude models via the Anthropic Messages API (sonnet-5, opus-4-8, opus-5; max_tokens required) |
+| `claude_message` | x402 per call | Claude models via the Anthropic Messages API (haiku/sonnet/opus family — current ids via `list_models`; max_tokens required) |
 | `jev_decide` | x402 per call | Jev structured decisions |
 | `agent_execute` | x402 per call | Autonomous agent execution (multi-step reasoning; calculator/fetch_url/web_search/data_analysis tools, plus code_exec where a sandbox executor is deployed; engines agents/oss-20b cheap and agents/gpt-6-sol premium; stream=true streams SSE step events) |
 | `buy_prepaid_tap` | $0.008-$2.80 by pack | Issue a prepaid API key for https://mapleai.shop/v1 (default: smallest pack of the cheapest model on sale; optional model + tokens, price = tokens x input rate) |
