@@ -1,6 +1,6 @@
 # MapleAI MCP — регистрационные тексты для реестров
 
-Карточки готовы к копипасте. Версия пакета: `mapleai-mcp@0.3.0`.
+Карточки готовы к копипасте. Версия пакета: `mapleai-mcp@0.3.1`.
 
 ## Подготовка перед подачей
 
@@ -14,20 +14,24 @@ npm publish --access public   # нужен логин npm (2FA)
 После публикации мгновенная проверка из чистого каталога:
 
 ```sh
-npx -y -p mapleai-mcp@0.3.0 mapleai-quickstart --network base
+npx -y -p mapleai-mcp@0.3.1 mapleai-quickstart --network base
 ```
 
 ---
 
-## 1. modelcontextprotocol/servers (официальный реестр)
+## 1. Официальный MCP Registry (registry.modelcontextprotocol.io)
 
-Формат: pull request, добавление в README в раздел «Community Servers» (алфавитно по **M**):
+Раздел Community Servers из README modelcontextprotocol/servers убран — подача теперь
+идёт в MCP Registry через `mcp-publisher` CLI (GitHub device-flow auth).
 
-```md
-- **[MapleAI MCP](https://github.com/veenrek/mapleai-gateway/tree/main/packages/mapleai-mcp)** — GPT chat, free embeddings, autonomous agent execution, Jev structured decisions and prepaid API keys. Local x402 USDC payments behind standard MCP tools (`list_models`, `embed_text`, `chat_completion`, `jev_decide`, `agent_execute`, `buy_prepaid_tap`, `prepaid_status`, `prepaid_chat`) on Solana, Base, Polygon and Arc.
-```
+Готово в репо: `packages/mapleai-mcp/server.json` (валидирован `mcp-publisher validate`),
+`mcpName` в package.json (`io.github.veenrek/mapleai-mcp`).
 
-Перед PR проверить чек-лист репозитория (`CONTRIBUTING.md` официального реестра).
+Порядок:
+1. npm версия с `mcpName` опубликована (0.3.1+).
+2. `mcp-publisher login github` → открыть https://github.com/login/device, ввести код.
+3. `mcp-publisher publish` из `packages/mapleai-mcp`.
+4. Проверка: `curl "https://registry.modelcontextprotocol.io/v0.1/servers?search=mapleai"`.
 
 ## 2. Glama.ai (glama.ai/mcp/servers)
 

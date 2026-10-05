@@ -1,0 +1,88 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.veenrek/mapleai-mcp",
+  "description": "Pay-per-request GPT chat, embeddings, agents and prepaid keys with local x402 USDC signing",
+  "repository": {
+    "url": "https://github.com/veenrek/mapleai-gateway",
+    "source": "github"
+  },
+  "version": "0.3.1",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "mapleai-mcp",
+      "version": "0.3.1",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "EVM_PRIVATE_KEY",
+          "description": "0x-prefixed wallet key for paid calls on Base, Polygon and Arc (x402 signing happens locally; the key never leaves this process)",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "SVM_PRIVATE_KEY",
+          "description": "Solana wallet key (base58 or JSON byte array) for paid calls on Solana",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "MCP_PAY_TO_BASE",
+          "description": "Verified API recipient on Base: 0x63db6eaf635a31bbc6714fe37bdc85243864f611 (check https://base.mapleai.shop/.well-known/x402)",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "MCP_PAY_TO_POLYGON",
+          "description": "Verified API recipient on Polygon: 0x63db6eaf635a31bbc6714fe37bdc85243864f611 (check https://polygon.mapleai.shop/.well-known/x402)",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "MCP_PAY_TO_ARC",
+          "description": "Verified API recipient on Arc: 0x63db6eaf635a31bbc6714fe37bdc85243864f611 (check https://arc.mapleai.shop/.well-known/x402)",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "MCP_PAY_TO_SOLANA",
+          "description": "Verified API recipient on Solana: 9DbpH2Mf9D26ak4bASsv6KA4Ra4V571oLpiVdZjAjcU8 (check https://sol.mapleai.shop/.well-known/x402)",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "MCP_MAX_PAYMENT_USDC",
+          "description": "Per-call spending cap for metered tools (chat, Jev, agent execution). Default 0.10",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false,
+          "default": "0.10"
+        },
+        {
+          "name": "MCP_MAX_PREPAID_USDC",
+          "description": "Per-purchase cap for prepaid key packs (covers the largest 1M-token pack). Default 3.00",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false,
+          "default": "3.00"
+        },
+        {
+          "name": "MCP_NETWORK",
+          "description": "Default network for tools: base, polygon, arc or solana. Default polygon",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false,
+          "default": "polygon"
+        }
+      ]
+    }
+  ]
+}
