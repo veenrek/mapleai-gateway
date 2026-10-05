@@ -102,6 +102,21 @@
   curl -X POST https://sol.mapleai.shop/prepaid/codes/auto -H 'content-type: application/json' -d '{}'
   ```
 
+## 6.5 Claude — Anthropic Messages API
+
+- **Endpoint**: POST https://sol.mapleai.shop/v1/messages (и зеркала base/polygon/arc)
+- **Tags**: anthropic, claude, messages-api, llm, x402
+- **Price**: финальный чек — ровно половина BlockRun: claude-sonnet-5 $1/$5, claude-opus-4-8 и claude-opus-5 $2.50/$12.50 за 1M in/out (+ ~$0.001 settlement overhead)
+- **Description**: Native Anthropic Messages API (content blocks, system prompt,
+  anthropic SSE stream events, обязательный max_tokens). Подходит для Anthropic SDK и
+  claude-совместимых агентов: baseURL = https://sol.mapleai.shop, оплата x402 через PAYMENT-SIGNATURE.
+- **Try it**:
+  ```bash
+  curl -X POST https://sol.mapleai.shop/v1/messages -H 'content-type: application/json' \
+    -H 'anthropic-version: 2023-06-01' \
+    -d '{"model":"claude-opus-4-8","max_tokens":64,"messages":[{"role":"user","content":"Hello"}]}'
+  ```
+
 ## 7. General listing (одна карточка на сервис)
 
 - **Name**: MapleAI — GPT, Agents, Images, Audio, X Intelligence API with x402 Pay-Per-Request

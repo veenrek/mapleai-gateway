@@ -97,6 +97,7 @@ Free list of available models with pricing and context windows.
 | POST | `/api/v1/chat/completions` | OpenAI Chat Completions (alias) |
 | POST | `/api/v1/responses` | OpenAI Responses API (alpha) |
 | POST | `/v1/responses` | OpenAI Responses API (alpha) |
+| POST | `/v1/messages` | Anthropic Messages API (Claude) |
 
 {{AGENT_AUDIO_ENDPOINTS}}
 {{AGENT_IMAGE_ENDPOINTS}}
@@ -119,6 +120,14 @@ model provider) are cancelled, not settled.
 - **One signature = one request.** Every request needs its own 402 challenge and its own signed authorization.
 - **Never reuse or fan out a `PAYMENT-SIGNATURE`.** Replays and parallel fan-out of one signed payload are rejected after the first settlement (`settlement_unconfirmed`).
 - **On 402, start over**: fetch a fresh challenge and sign again — never pay against a stale quote.
+
+## Anthropic Messages API (Claude)
+
+`POST /v1/messages` speaks the native Anthropic Messages API: `model` (`claude-sonnet-5`,
+`claude-opus-4-8`, `claude-opus-5` — bare ids or the `anthropic/...` catalog form),
+required `max_tokens`, optional `system` prompt, `stream: true` for Anthropic SSE events.
+Point the Anthropic SDK at `{{API_BASE}}` as `baseURL`; authentication and pricing are
+the same x402 flow as above (402 challenge first, then retry with `PAYMENT-SIGNATURE`).
 
 ## Agents API (`agent.execution`)
 
