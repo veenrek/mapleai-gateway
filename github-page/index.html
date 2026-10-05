@@ -4,13 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MapleAI — GPT, Agents, Images, Audio, X Intelligence API with x402 Pay-Per-Request</title>
-<meta name="description" content="OpenAI-compatible AI gateway: GPT-6 chat combos, autonomous agents with tools and web search, embeddings, images, audio (TTS/STT) and X search/digest/sentiment/factcheck — plus free tier. Pay per request in USDC via x402 on Solana, Base, Polygon, Arc, or buy prepaid API keys.">
+<meta name="description" content="14 chat models (GPT + Claude), 7 image models, and Jev structured decisions. Pay per request in USDC on Solana with x402.">
 <meta name="keywords" content="gpt api, openai api, gpt-5.6, gpt-6, pay per request, x402, usdc payment, Solana, openai compatible, llm api, ai api">
 <link rel="icon" href="https://sol.mapleai.shop/favicon.ico" sizes="any">
 <link rel="apple-touch-icon" href="https://sol.mapleai.shop/favicon.ico">
 <meta name="theme-color" content="#0F1117">
-<meta property="og:title" content="MapleAI — GPT, Agents, Images, Audio, X Intelligence API with x402 Pay-Per-Request">
-<meta property="og:description" content="GPT-6 combos, autonomous agents with tools and web search, embeddings, images, audio and X intelligence plus free tier. Pay per request in USDC via x402, on any of the 4 networks — or prepaid API keys.">
+<meta property="og:title" content="MapleAI — GPT and Image API with x402 Pay-Per-Request">
+<meta property="og:description" content="14 chat models (GPT + Claude), 7 image models, and Jev structured decisions. Pay per request in USDC on Solana with x402.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://sol.mapleai.shop/">
 <meta property="og:site_name" content="MapleAI">
@@ -41,8 +41,8 @@
       }
     }
   },
-  "description": "GPT-6 combos, autonomous agents with tools and web search, embeddings with free tier, images, audio (TTS/STT), Jev decisions and X intelligence — pay per request in USDC via x402 on Solana, Base, Polygon, Arc, or use prepaid API keys.",
-  "featureList": ["OpenAI-compatible GPT API", "GPT-6 combo models", "Autonomous agent execution with tools and web search", "Embeddings with free tier", "Image generation and editing", "Audio TTS and STT", "Jev structured decisions", "X intelligence: search, digest, sentiment, factcheck", "Prepaid API keys", "x402 payments on 4 networks", "No subscriptions"],
+  "description": "14 chat models (GPT + Claude), 7 image models, and Jev structured decisions. Pay per request in USDC on Solana with x402.",
+  "featureList": ["OpenAI-compatible API (GPT + Claude)", "Anthropic Messages API", "14 chat models", "7 image models", "Jev structured decisions", "x402 payments", "No API keys required", "No subscriptions"],
   "operatingSystem": "Any",
   "url": "https://sol.mapleai.shop"
 }
@@ -230,7 +230,9 @@ footer a:hover { color: var(--accent); }
       <a href="#quickstart">Quickstart</a>
       <a href="#models">Models</a>
       <a href="#images">Images</a>
+      <a href="#audio">Audio</a>
       <a href="#jev">Jev</a>
+      <a href="#agents">Agents</a>
       <a href="#prepaid">Prepaid</a>
       <a href="#payment">Payment</a>
       <a href="https://sol.mapleai.shop/v1/models">API</a>
@@ -244,8 +246,8 @@ footer a:hover { color: var(--accent); }
   <div class="hero">
     <h1>Premium <span class="hl">GPT access</span>, no subscription.</h1>
     <p class="lede">
-      GPT-6 model combos behind one OpenAI-compatible endpoint — plus autonomous agents with tools and web search, image generation and editing, audio (TTS/STT), embeddings with a free tier, Jev decisions and X intelligence (search, digest, sentiment, factcheck).
-      Pay per request in USDC on Solana, Base, Polygon or Arc via x402 — or buy a prepaid API key. No account, no subscription.
+      14 chat models (GPT + Claude) behind one OpenAI-compatible endpoint, plus Anthropic Messages API at /v1/messages. 7 image models for generation and editing. Jev structured decisions via a separate SystemOne endpoint.
+      Pay per request in USDC on Solana. No account, no API key rotation, no monthly bill.
     </p>
 
     <div class="endpoint">
@@ -261,7 +263,7 @@ footer a:hover { color: var(--accent); }
     </div>
 
     <div class="stats">
-      <div class="stat"><b>4</b><span>GPT models</span></div>
+      <div class="stat"><b>14</b><span>chat models</span></div>
       <div class="stat"><b>$0.07</b><span>per 1M input tokens, from</span></div>
       <div class="stat"><b>1.1M</b><span>context window</span></div>
       <div class="stat"><b>$0.0010</b><span>minimum charge</span></div>
@@ -292,6 +294,56 @@ footer a:hover { color: var(--accent); }
         <div class="meta">1.1M context • chat, reasoning, coding, vision</div>
         <div class="price">$1.40 in / $7.00 out per 1M</div>
       </article>
+      <article class="model">
+        <h3>anthropic/claude-sonnet-5</h3>
+        <div class="meta">1.1M context • chat, coding, reasoning, vision</div>
+        <div class="price">$1.00 in / $5.00 out per 1M</div>
+      </article>
+      <article class="model">
+        <h3>anthropic/claude-opus-4-8</h3>
+        <div class="meta">1.1M context • chat, coding, reasoning, vision</div>
+        <div class="price">$2.50 in / $12.50 out per 1M</div>
+      </article>
+      <article class="model">
+        <h3>anthropic/claude-opus-5</h3>
+        <div class="meta">1.1M context • chat, coding, reasoning, vision</div>
+        <div class="price">$2.50 in / $12.50 out per 1M</div>
+      </article>
+      <article class="model">
+        <h3>anthropic/claude-haiku-4-5</h3>
+        <div class="meta">1.1M context • chat, coding</div>
+        <div class="price">$0.50 in / $2.50 out per 1M</div>
+      </article>
+      <article class="model">
+        <h3>anthropic/claude-sonnet-4-5</h3>
+        <div class="meta">1.1M context • chat, coding, reasoning, vision</div>
+        <div class="price">$1.50 in / $7.50 out per 1M</div>
+      </article>
+      <article class="model">
+        <h3>anthropic/claude-sonnet-4-6</h3>
+        <div class="meta">1.1M context • chat, coding, reasoning, vision</div>
+        <div class="price">$1.50 in / $7.50 out per 1M</div>
+      </article>
+      <article class="model">
+        <h3>anthropic/claude-sonnet-5-5</h3>
+        <div class="meta">1.1M context • chat, coding, reasoning, vision</div>
+        <div class="price">$1.00 in / $5.00 out per 1M</div>
+      </article>
+      <article class="model">
+        <h3>anthropic/claude-opus-4-6</h3>
+        <div class="meta">1.1M context • chat, coding, reasoning, vision</div>
+        <div class="price">$2.50 in / $12.50 out per 1M</div>
+      </article>
+      <article class="model">
+        <h3>anthropic/claude-opus-4-7</h3>
+        <div class="meta">1.1M context • chat, coding, reasoning, vision</div>
+        <div class="price">$2.50 in / $12.50 out per 1M</div>
+      </article>
+      <article class="model">
+        <h3>anthropic/claude-opus-5-5</h3>
+        <div class="meta">1.1M context • chat, coding, reasoning, vision</div>
+        <div class="price">$2.00 in / $10.00 out per 1M</div>
+      </article>
     </div>
     <p style="margin-top: 20px; color: var(--fg-muted); font-size: 14px;">
       Full catalog with live pricing: <a href="https://sol.mapleai.shop/v1/models">GET /v1/models</a>
@@ -305,7 +357,9 @@ footer a:hover { color: var(--accent); }
 <tr><th scope="row"><code>grok-imagine-image</code></th><td>1024x1024</td><td>$0.0450</td></tr>
 <tr><th scope="row"><code>gpt-image-2-2k</code></th><td>2048x2048</td><td>$0.0900</td></tr>
 <tr><th scope="row"><code>gpt-image-2.5-sunburst-2k</code></th><td>2048x2048</td><td>$0.2200</td></tr></tbody></table></div><p class="image-links"><code>POST /api/v1/images/generations</code><br><code>POST /api/v1/images/image2image</code><br><a href="https://sol.mapleai.shop/developers#images">Image API guide</a> | <a href="https://sol.mapleai.shop/openapi.json">OpenAPI</a></p></section>
+  <section id="audio"><h2>Audio</h2><p class="h2sub">Text-to-speech (<code>tts-1</code>, <code>tts-1-hd</code>, <code>orpheus-english</code>, <code>orpheus-arabic</code>, $0.015/request) and speech-to-text (<code>whisper-1</code>, <code>whisper-large-v3</code>, <code>whisper-large-v3-turbo</code>, $0.006/request, word timestamps on whisper-large-v3*).</p><p><code>POST /v1/audio/speech</code> &nbsp; <code>POST /v1/audio/transcriptions</code> &nbsp; <a href="https://sol.mapleai.shop/developers#audio">Audio API guide</a></p></section>
   <section id="jev"><h2>Jev</h2><p class="h2sub">Structured decisions with jev-latest via SystemOne. $0.06 per 1M input tokens; output tokens are free.</p><p><code>POST /jev</code> &nbsp; <a href="https://sol.mapleai.shop/developers#jev">Jev API guide</a></p></section>
+  <section id="agents"><h2>Agents</h2><p class="h2sub">Autonomous task execution with agents/oss-20b: multi-step reasoning plus calculator and fetch_url tools. $0.002 base + $0.001 per step, charged at the max_steps ceiling.</p><p><code>POST /v1/agents/execute</code> &nbsp; <a href="https://sol.mapleai.shop/developers#agents">Agents API guide</a></p></section>
   
   <section id="prepaid"><h2>Prepaid API keys</h2><p class="h2sub">Token packs for one GPT model: 0.1M-1M tokens at the model input rate, in 0.1M steps.</p><p><code>POST /prepaid/codes</code> &nbsp; <a href="https://sol.mapleai.shop/developers#prepaid">API guide</a></p></section>
 

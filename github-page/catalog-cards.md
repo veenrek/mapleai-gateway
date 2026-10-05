@@ -91,7 +91,9 @@
 
 - **Endpoint**: POST https://sol.mapleai.shop/prepaid/codes (или `/prepaid/codes/auto` — пустое тело = пак 0.1M Luna)
 - **Tags**: prepaid, credits, api-key, budget, x402
-- **Price**: $0.007–$2.80 per pack (0.1M–1M tokens, по модели) + $0.001 fee
+- **Price**: $0.007–$2.80 per pack (0.1M–1M tokens, по модели) + settlement fee по сети
+  (≈$0.002 Solana / $0.0025 Base / $0.0055 Polygon / $0.0029 Arc; замерено 05.10.2026
+  на `/prepaid/codes/auto`: all-in $0.009 / $0.0095 / $0.0125 / $0.009875)
 - **Description**: Buy a prepaid OpenAI-compatible API key for one GPT model
   with a token budget (100k–1M in 100k steps, priced at the input rate).
   Spend the key (Bearer, no x402) at POST {sol,base,polygon,arc}.mapleai.shop/prepaid/v1/chat/completions
@@ -106,7 +108,7 @@
 
 - **Endpoint**: POST https://sol.mapleai.shop/v1/messages (и зеркала base/polygon/arc)
 - **Tags**: anthropic, claude, messages-api, llm, x402
-- **Price**: финальный чек — ровно половина BlockRun: haiku-4-5 $0.50/$2.50, sonnet-4.5/4.6 $1.50/$7.50, sonnet-5/5.5 $1/$5, opus-4.6/4.7/4.8/5 $2.50/$12.50, opus-5.5 $2/$10 за 1M in/out (+ settlement fee $0.001–0.0055 по сети)
+- **Price**: финальный чек — ровно половина BlockRun: haiku-4-5 $0.50/$2.50, sonnet-4.5/4.6 $1.50/$7.50, sonnet-5/5.5 $1/$5, opus-4.6/4.7/4.8/5 $2.50/$12.50, opus-5.5 $2/$10 за 1M in/out (+ settlement fee $0.002–$0.0055 по сети)
 - **Description**: Native Anthropic Messages API (content blocks, system prompt,
   anthropic SSE stream events, обязательный max_tokens). Подходит для Anthropic SDK и
   claude-совместимых агентов: baseURL = https://sol.mapleai.shop, оплата x402 через PAYMENT-SIGNATURE.
@@ -119,12 +121,14 @@
 
 ## 7. General listing (одна карточка на сервис)
 
-- **Name**: MapleAI — GPT, Agents, Images, Audio, X Intelligence API with x402 Pay-Per-Request
+- **Name**: MapleAI — GPT & Claude, Agents, Images, Audio, X Intelligence API with x402 Pay-Per-Request
 - **URL**: https://sol.mapleai.shop (mirrors: base/polygon/arc.mapleai.shop)
-- **Tags**: x402, usdc, solana, base, polygon, arc, llm, agents, mcp, audio-api, image-api, embeddings, search, openai-compatible, prepaid
-- **Price**: free tier, $0.001–$17.50 per request/pack
-- **Description**: Pay-per-request AI API: GPT-6 combos, autonomous agent execution with tools and web search, image generation/editing from $0.02,
-  audio TTS ($0.015) and STT ($0.006), embeddings with a free tier, Jev structured decisions, X intelligence (search/digest/sentiment/factcheck), and prepaid token packs.
+- **Tags**: x402, usdc, solana, base, polygon, arc, llm, gpt, claude, anthropic, agents, mcp, audio-api, image-api, embeddings, search, openai-compatible, prepaid
+- **Price**: free tier; paid from $0.001 per request, prepaid packs to $2.80 (+ fee по сети)
+- **Description**: Pay-per-request AI API: GPT-6 combos, 10 Claude models via native Anthropic Messages API (/v1/messages, from $0.50/1M in),
+  autonomous agent execution with tools and web search, image generation/editing from $0.02,
+  audio TTS ($0.015) and STT ($0.006), free 2048-dim embeddings and a free rate-limited gpt-oss-20b chat tier,
+  Jev structured decisions, X intelligence (search/digest/sentiment/factcheck), and prepaid token packs.
   Pay in USDC over x402 on Solana, Base, Polygon or Arc. No accounts — your wallet is your identity. Machine-readable
   discovery: service-endpoints.json, OpenAPI, llms.txt, AI-AGENTS.md. MCP server for agents: npx mapleai-mcp.
 

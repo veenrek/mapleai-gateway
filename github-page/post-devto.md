@@ -30,6 +30,17 @@ curl https://sol.mapleai.shop/v1/embeddings \
 2048-dimensional vectors from NVIDIA Nemotron Embed 1B, up to 128 texts per
 request, OpenAI SDK compatible. Details: [Free Embeddings API](https://sol.mapleai.shop/free-embeddings).
 
+There is also a free, rate-limited chat tier for smoke tests — `nvidia/gpt-oss-20b`,
+no key and no payment, capped per IP (10 calls / 10 min, 100 / day):
+
+```bash
+curl https://sol.mapleai.shop/v1/free/chat/completions \
+  -H 'content-type: application/json' \
+  -d '{"messages":[{"role":"user","content":"Hello"}],"stream":false}'
+
+# remaining quota: GET /v1/free/chat/completions/quota
+```
+
 The second step is a normal chat completion — except the first response is a
 payment challenge:
 
@@ -54,7 +65,7 @@ We published a small TypeScript app that does the whole loop:
 3. sends the best matches to `gpt-6-luna` through x402 and prints the answer.
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/veenrek/mapleai-gateway
 cd examples/embeddings-to-chat
 npm install && cp env.example .env   # add a funded Base or Solana wallet key
 
@@ -82,6 +93,17 @@ $0.06/1M input tokens, and prepaid token packs from $0.007 if you prefer a
 budget over per-request payments. Failed calls (HTTP ≥ 400) are cancelled,
 not settled.
 
+Claude is served too, through the native Anthropic Messages API — point the
+Anthropic SDK at `https://sol.mapleai.shop` and call `POST /v1/messages`.
+Ten live models, from Claude Haiku 4.5 ($0.50 / $2.50 per 1M in/out) to
+Claude Opus 5.5 ($2 / $10), paid with the same x402 flow:
+
+```bash
+curl -X POST https://sol.mapleai.shop/v1/messages \
+  -H 'content-type: application/json' -H 'anthropic-version: 2023-06-01' \
+  -d '{"model":"claude-haiku-4-5","max_tokens":64,"messages":[{"role":"user","content":"Hello"}]}'
+```
+
 Payments settle in USDC on Solana, Base, Polygon or Arc through the x402
 protocol — pick the network by picking the subdomain:
 
@@ -101,7 +123,7 @@ writing glue code.
 
 ## Links
 
-- Landing: **<GITHUB-PAGES-URL>** <!-- заменить после публикации -->
+- Landing: **https://sol.mapleai.shop**
 - Free embeddings: https://sol.mapleai.shop/free-embeddings
 - Live example: https://base.mapleai.shop/examples/embeddings-to-chat/
 - Model catalog: https://sol.mapleai.shop/v1/models

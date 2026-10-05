@@ -11,8 +11,8 @@
 ```
 
 Колонки: API | Description | Auth | HTTPS | CORS.
-Auth = No (ключ не требуется), HTTPS = Yes, CORS = No — проверено
-27.09.2026: заголовков `access-control-*` нет, это серверный API
+Auth = No (ключ не требуется), HTTPS = Yes, CORS = No — перепроверено
+05.10.2026: заголовков `access-control-*` нет, это серверный API
 (из браузера cross-origin не вызвать, через curl/SDK/сервер — можно).
 
 PR title: `Add MapleAI Embeddings to Machine Learning`
@@ -59,6 +59,8 @@ OpenAPI: https://sol.mapleai.shop/openapi.json
 - agentic.market — уже валидировано для sol/base chat
 
 ## 5. Перед подачей проверить
+
+Всё перепроверено 05.10.2026:
 
 - [x] https://sol.mapleai.shop/free-embeddings отвечает 200 (на всех 4 доменах)
 - [x] CORS: заголовков нет — в таблице ставим No (проверено)

@@ -1,6 +1,7 @@
 # MapleAI MCP — регистрационные тексты для реестров
 
-Карточки готовы к копипасте. Версия пакета: `mapleai-mcp@0.3.2`.
+Карточки готовы к копипасте. Версия пакета: `mapleai-mcp@0.3.2`
+(в package.json уже 0.3.2; на 05.10.2026 в npm latest — 0.3.1, т.е. 0.3.2 ещё ждёт `npm publish`).
 
 ## Подготовка перед подачей
 
@@ -110,6 +111,8 @@ startCommand:
 
 ## 6. A2A-реестры (дополнительные каналы)
 
-Agent card уже жив: `https://sol.mapleai.shop/.well-known/agent-card.json` (8 skills).
+Agent card уже жив: `https://sol.mapleai.shop/.well-known/agent-card.json` (12 skills на 05.10.2026:
+chat-completion, responses-api, anthropic-message, embed-text, text-to-speech, speech-to-text,
+chat-free-gptoss, image-generation, image-editing, jev-decision, buy-prepaid-key, prepaid-key-status).
 Если встретишь каталог A2A-агентов — подаётся именно этот URL плюс
 `https://base.mapleai.shop/.well-known/agent-card.json` и т.д. (карта генерируется из живого конфига).
