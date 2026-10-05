@@ -24,6 +24,26 @@ For Base and Arc, use `EVM_PRIVATE_KEY` and the corresponding `MCP_PAY_TO_BASE` 
 
 ## MCP client
 
+**Claude Code** — one command:
+
+```sh
+claude mcp add mapleai \
+  -e EVM_PRIVATE_KEY=0xYOUR_PRIVATE_KEY \
+  -e MCP_PAY_TO_POLYGON=0x63db6eaf635a31bbc6714fe37bdc85243864f611 \
+  -- npx -y -p mapleai-mcp mapleai-mcp
+```
+
+**Codex (OpenAI)** — in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.mapleai]
+command = "npx"
+args = ["-y", "-p", "mapleai-mcp", "mapleai-mcp"]
+env = { EVM_PRIVATE_KEY = "0xYOUR_PRIVATE_KEY", MCP_PAY_TO_POLYGON = "0x63db6eaf635a31bbc6714fe37bdc85243864f611" }
+```
+
+**Claude Desktop, Cursor and other JSON-config clients:**
+
 ```json
 {
   "mcpServers": {
@@ -40,6 +60,8 @@ For Base and Arc, use `EVM_PRIVATE_KEY` and the corresponding `MCP_PAY_TO_BASE` 
   }
 }
 ```
+
+On Windows, if the client cannot find `npx`, wrap it: `"command": "cmd", "args": ["/c", "npx", "-y", "-p", "mapleai-mcp", "mapleai-mcp"]`.
 
 Tools:
 
