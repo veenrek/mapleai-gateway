@@ -19,7 +19,9 @@ npx -y -p mapleai-mcp@0.3.1 mapleai-quickstart --network base
 
 ---
 
-## 1. Официальный MCP Registry (registry.modelcontextprotocol.io)
+## 1. Официальный MCP Registry (registry.modelcontextprotocol.io) — ✅ ОПУБЛИКОВАНО 2026-10-05
+
+`io.github.veenrek/mapleai-mcp@0.3.1` — есть в API: `curl "https://registry.modelcontextprotocol.io/v0.1/servers?search=mapleai"`.
 
 Раздел Community Servers из README modelcontextprotocol/servers убран — подача теперь
 идёт в MCP Registry через `mcp-publisher` CLI (GitHub device-flow auth).
