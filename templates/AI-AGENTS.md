@@ -147,6 +147,8 @@ the same x402 flow as above (402 challenge first, then retry with `PAYMENT-SIGNA
 ### Tools
 - `calculator` — arithmetic only: `{"expression": "2*(3+4)/5"}` (digits, `+ - * / % ^ ( )`)
 - `fetch_url` — downloads public page text: `{"url": "https://example.com"}` (max 3 per task)
+
+**Deterministic math:** raw chat models approximate arithmetic and occasionally slip on multi-digit carries (we measured it live). For anything with sums, rates, conversions or any numbers that must be exact, run the task through `/v1/agents/execute` with `calculator` (and `data_analysis`) instead of plain chat — the result is computed, not guessed.
 - `web_search` — web search via keyless Exa (DuckDuckGo fallback): `{"query": "..."}` → title/url/snippet (max 3 per task)
 - `data_analysis` — descriptive stats, no code execution: `{"data": [1,2,3], "field": "price"}` → count/sum/mean/median/min/max/stdev
 - `code_exec` — sandboxed code execution: `{"language": "python", "code": "print(2+2)"}` with python / javascript / typescript → stdout/stderr + exit code; no network, no filesystem, no persistence (max 3 per task, $0.002 per call)

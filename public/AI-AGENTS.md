@@ -89,7 +89,7 @@ No API keys, no subscriptions, no monthly bills.
 
 **Response** `agent.execution`: `id`, `status` (`completed` | `failed` | `timeout`), `steps_executed`, full `steps[]` trace (thought/action/tool_call/tool_result/usage per step), `output` (`reasoning`, `result`, `confidence` (currently null), `sources`), `usage` (tokens + `reasoning_tokens`/`action_tokens` + `charged_tools` + `charge` with `charged_ceiling_usd`).
 
-**Tools**: `calculator` (arithmetic), `fetch_url` (public page text), `web_search` (keyless Exa, DuckDuckGo fallback), `data_analysis` (descriptive stats, no code execution), `code_exec` (sandboxed execution of python / javascript / typescript — no network, no filesystem, no persistence; returns stdout/stderr + exit code; max 3 calls per task). Unknown tools are rejected with `tool_not_allowed`.
+**Tools**: `calculator` (arithmetic), `fetch_url` (public page text), `web_search` (keyless Exa, DuckDuckGo fallback), `data_analysis` (descriptive stats, no code execution), `code_exec` (sandboxed execution of python / javascript / typescript — no network, no filesystem, no persistence; returns stdout/stderr + exit code; max 3 calls per task). Unknown tools are rejected with `tool_not_allowed`. For exact arithmetic, rates or conversions use `calculator`/`data_analysis`/`code_exec` here instead of plain chat — raw chat models approximate math and can slip.
 
 **SSE** (`stream: true`): `event: open` (ceiling), `event: step` (each completed step live), `event: done` (full execution JSON).
 
