@@ -130,7 +130,7 @@
       </section>
       <section id="mcp">
         <h2>MCP for agent clients</h2>
-        <p>Use the local stdio server with Node.js 20+. It exposes eight tools — free <code>list_models</code>, <code>embed_text</code>, <code>prepaid_status</code>, paid <code>chat_completion</code>, <code>jev_decide</code>, <code>agent_execute</code>, <code>buy_prepaid_tap</code>, and <code>prepaid_chat</code> which spends a prepaid key with no wallet. The server signs the x402 challenge and retries the API request; the agent client only needs standard MCP tool support.</p>
+        <p>Use the local stdio server with Node.js 20+. It exposes nine tools — free <code>list_models</code>, <code>embed_text</code>, <code>prepaid_status</code>, paid <code>chat_completion</code>, <code>claude_message</code>, <code>jev_decide</code>, <code>agent_execute</code>, <code>buy_prepaid_tap</code>, and <code>prepaid_chat</code> which spends a prepaid key with no wallet. The server signs the x402 challenge and retries the API request; the agent client only needs standard MCP tool support.</p>
         <div class="snippet"><div class="snippet-title">Check a quote without paying</div><pre><code>npx -y -p mapleai-mcp mapleai-quickstart --network polygon</code></pre></div>
         <div class="snippet"><div class="snippet-title">Client MCP configuration</div><pre><code>{
   "mcpServers": {

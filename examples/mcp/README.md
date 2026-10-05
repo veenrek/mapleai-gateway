@@ -1,6 +1,6 @@
 # MapleAI MCP example
 
-The local MCP server exposes eight tools. Free: `list_models`, `embed_text`, `prepaid_status`. Paid with x402 USDC: `chat_completion`, `jev_decide`, `agent_execute`, `buy_prepaid_tap`. And `prepaid_chat` spends a prepaid `oms_buy_` key instead of x402 — no wallet needed once a key is bought. It works with MCP clients that can launch a local stdio server. The client itself does not need x402 support: the local server handles the HTTP 402 challenge, signs it, and retries the request.
+The local MCP server exposes nine tools. Free: `list_models`, `embed_text`, `prepaid_status`. Paid with x402 USDC: `chat_completion`, `claude_message` (Claude models over the Anthropic Messages API), `jev_decide`, `agent_execute`, `buy_prepaid_tap`. And `prepaid_chat` spends a prepaid `oms_buy_` key instead of x402 — no wallet needed once a key is bought. It works with MCP clients that can launch a local stdio server. The client itself does not need x402 support: the local server handles the HTTP 402 challenge, signs it, and retries the request.
 
 ## Setup
 
