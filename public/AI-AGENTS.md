@@ -8,13 +8,16 @@
 - **Compatibility**: OpenAI-compatible API
 
 ## Available Models
-All models from Anthropic's Claude family:
-- claude-opus-5 (1M context, $5/$25 per 1M tokens)
-- claude-sonnet-5 (1M context, $2/$10 per 1M tokens)
-- claude-haiku-4.5 (200K context, $1/$5 per 1M tokens)
-- claude-fable-5.1 (1M context, $10/$50 per 1M tokens)
-- claude-opus-4.8, claude-opus-4.7, claude-opus-4.5
-- claude-sonnet-4.6, claude-sonnet-4.5
+Claude lineup (priced at half of BlockRun, USD per 1M in/out tokens):
+- claude-haiku-4-5 ($0.50/$2.50)
+- claude-sonnet-4-5, claude-sonnet-4-6 ($1.50/$7.50)
+- claude-sonnet-5, claude-sonnet-5-5 ($1/$5)
+- claude-opus-4-6, claude-opus-4-7, claude-opus-4-8, claude-opus-5 ($2.50/$12.50)
+- claude-opus-5-5 ($2/$10)
+
+Plus the GPT family (openai/gpt-5.6-sol, openai/gpt-5.6-terra, openai/gpt-6-luna, openai/gpt-6-sol).
+Catalog ids use the `anthropic/...` prefix; bare claude-* ids resolve too.
+Native Anthropic Messages API: `POST /v1/messages` (system prompt, content blocks, SSE events, required max_tokens).
 
 Full catalog: GET https://sol.mapleai.shop/v1/models
 
@@ -86,7 +89,7 @@ No API keys, no subscriptions, no monthly bills.
 
 **Response** `agent.execution`: `id`, `status` (`completed` | `failed` | `timeout`), `steps_executed`, full `steps[]` trace (thought/action/tool_call/tool_result/usage per step), `output` (`reasoning`, `result`, `confidence` (currently null), `sources`), `usage` (tokens + `reasoning_tokens`/`action_tokens` + `charged_tools` + `charge` with `charged_ceiling_usd`).
 
-**Tools**: `calculator` (arithmetic), `fetch_url` (public page text), `web_search` (keyless Exa, DuckDuckGo fallback), `data_analysis` (descriptive stats, no code execution), `code_exec` (sandboxed execution of python / javascript / typescript — no network, no filesystem, no persistence; returns stdout/stderr + exit code; max 3 calls per task). Unknown tools are rejected with `tool_not_allowed`.
+**Tools**: `calculator` (arithmetic), `fetch_url` (public page text), `web_search` (keyless Exa, DuckDuckGo fallback), `data_analysis` (descriptive stats, no code execution), `code_exec` (sandboxed execution of python / javascript / typescript — no network, no filesystem, no persistence; returns stdout/stderr + exit code; max 3 calls per task). Unknown tools are rejected with `tool_not_allowed`. For exact arithmetic, rates or conversions use `calculator`/`data_analysis`/`code_exec` here instead of plain chat — raw chat models approximate math and can slip.
 
 **SSE** (`stream: true`): `event: open` (ceiling), `event: step` (each completed step live), `event: done` (full execution JSON).
 

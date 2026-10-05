@@ -174,7 +174,7 @@ server.registerTool('embed_text', {
 });
 
 server.registerTool('chat_completion', {
-  description: 'Call a MapleAI model with local x402 USDC payment. Maximum spend per call is MCP_MAX_PAYMENT_USDC (default 0.10).',
+  description: 'Call a MapleAI GPT model (OpenAI-compatible /v1/chat/completions) with local x402 USDC payment. Maximum spend per call is MCP_MAX_PAYMENT_USDC (default 0.10). For Claude models use claude_message.',
   inputSchema: {
     network: networkSchema,
     model: z.string().min(1),
@@ -184,6 +184,28 @@ server.registerTool('chat_completion', {
 }, async ({ network, model, messages, max_tokens }) => {
   try {
     const result = await paidChat(network, JSON.stringify({ model, messages, max_tokens }));
+    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+  } catch (error) { return { isError: true, content: [{ type: 'text', text: String(error) }] }; }
+});
+
+server.registerTool('claude_message', {
+  description:
+    'Call a Claude model through the Anthropic Messages API (native shape: content blocks, usage.input_tokens/output_tokens) ' +
+    'with local x402 USDC payment. max_tokens is required (Anthropic rule) and bounds the output estimate in the quote. ' +
+    'The optional system prompt goes in its own field, not in messages. Any claude-* model id from list_models works — ' +
+    'new Claude models need no MCP update. Maximum spend per call is MCP_MAX_PAYMENT_USDC (default 0.10).',
+  inputSchema: {
+    network: networkSchema,
+    model: z.string().min(1).describe('Claude model id, bare or anthropic/-prefixed (e.g. claude-sonnet-5, claude-opus-5). Current ids are listed by list_models; the gateway validates and answers with a clear error for unknown ids — no MCP update is needed when new Claude models ship.'),
+    max_tokens: z.number().int().min(1).max(16384),
+    messages: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string() })).min(1).max(64),
+    system: z.string().max(12000).optional(),
+  },
+}, async ({ network, model, max_tokens, messages, system }) => {
+  try {
+    const body: Record<string, unknown> = { model, max_tokens, messages };
+    if (system !== undefined) body.system = system;
+    const result = await paidCall(network, '/v1/messages', JSON.stringify(body));
     return { content: [{ type: 'text', text: JSON.stringify(result) }] };
   } catch (error) { return { isError: true, content: [{ type: 'text', text: String(error) }] }; }
 });

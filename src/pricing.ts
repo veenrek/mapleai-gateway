@@ -23,6 +23,8 @@ interface ChatRequestBody {
   input?: unknown;
   /** Responses API system prompt. */
   instructions?: string;
+  /** Anthropic Messages API system prompt: a string or an array of text blocks. */
+  system?: unknown;
   max_tokens?: number;
   max_completion_tokens?: number;
   max_output_tokens?: number;
@@ -66,6 +68,16 @@ export function estimateInputTokens(body: ChatRequestBody): number {
   let tokens = TOKENS_REPLY_PRIMING;
   if (typeof body.instructions === "string") {
     tokens += textTokens(body.instructions);
+  }
+  // Anthropic Messages API sends the prompt as `system` (string or text blocks).
+  if (typeof body.system === "string") {
+    tokens += textTokens(body.system);
+  } else if (Array.isArray(body.system)) {
+    for (const part of body.system as Array<Record<string, unknown>>) {
+      if (part?.type === "text" && typeof part.text === "string") {
+        tokens += textTokens(part.text);
+      }
+    }
   }
   for (const message of messages) {
     tokens += messageTokens(message);

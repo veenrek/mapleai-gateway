@@ -201,7 +201,10 @@ resourceServer.registerExtension({
 });
 
 const audioModelCount = () => (speechEnabled ? speechModels.length : 0) + (transcriptionsEnabled ? transcriptionModels.length : 0);
-const CATALOG_SUMMARY = () => `${catalog().length} GPT models, ${imageModels.length} image models` +
+const claudeModelCount = () => catalog().filter((m) => m.id.startsWith("anthropic/")).length;
+const CATALOG_SUMMARY = () => `${catalog().length - claudeModelCount()} GPT models` +
+  (claudeModelCount() ? `, ${claudeModelCount()} Claude models` : "") +
+  `, ${imageModels.length} image models` +
   (audioModelCount() ? `, ${audioModelCount()} audio models` : "") +
   (jevEnabled ? ", Jev structured decisions" : "") + `; x402 on ${chain.networkName}`;
 
@@ -259,6 +262,56 @@ const responsesDiscovery = declareDiscoveryExtension({
       status: "completed",
       output_text: "Hello!",
       output: [],
+    },
+  },
+});
+
+const ANTHROPIC_DESCRIPTION =
+  "Anthropic Messages API (Claude models). Anthropic-native request/response shape " +
+  "(system prompt, content blocks, stream SSE events); claude-* ids resolve bare or " +
+  "via the anthropic/ prefixed catalog id from GET /v1/models.";
+
+const anthropicInputExample = {
+  model: "claude-sonnet-5",
+  max_tokens: 64,
+  messages: [{ role: "user", content: "Hello" }],
+};
+
+const anthropicInputSchema = {
+  type: "object",
+  required: ["model", "max_tokens", "messages"],
+  properties: {
+    model: { type: "string", description: "Claude model id (claude-haiku-4-5, claude-sonnet-*, claude-opus-* — full list in GET /v1/models)" },
+    max_tokens: { type: "integer", minimum: 1, description: "Required by the Anthropic API" },
+    system: { type: "string", description: "System prompt (string or array of text blocks)" },
+    messages: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["role", "content"],
+        properties: {
+          role: { type: "string", enum: ["user", "assistant"] },
+          content: {},
+        },
+      },
+    },
+    stream: { type: "boolean" },
+  },
+} as const;
+
+const anthropicDiscovery = declareDiscoveryExtension({
+  input: anthropicInputExample,
+  inputSchema: anthropicInputSchema,
+  bodyType: "json",
+  output: {
+    example: {
+      id: "msg_example",
+      type: "message",
+      role: "assistant",
+      model: "claude-sonnet-5",
+      content: [{ type: "text", text: "Hello!" }],
+      stop_reason: "end_turn",
+      usage: { input_tokens: 12, output_tokens: 2 },
     },
   },
 });
@@ -511,6 +564,7 @@ const PAID_ROUTES = {
     "OpenAI-compatible Responses API (alpha), translated to chat completions upstream",
     responsesDiscovery, quotedPrice, true, false, CHAT_TAGS,
   ),
+  "POST /v1/messages": paidRoute(ANTHROPIC_DESCRIPTION, anthropicDiscovery, quotedPrice, true, false, CHAT_TAGS),
   ...(imagesEnabled ? {
     "POST /api/v1/images/generations": paidRoute("Generate images, priced per image and size", imageDiscovery, (context) => quoteImage(requestBody(context)), false, true, ["AI", "image", "generation"]),
     "POST /api/v1/images/image2image": paidRoute("Edit an image, priced per image and size", editDiscovery, (context) => quoteImage(requestBody(context)), false, true, ["AI", "image", "editing"]),
@@ -862,6 +916,150 @@ async function handleChatCompletions(req: Request, res: Response): Promise<void>
 }
 
 app.post(["/v1/chat/completions", "/api/v1/chat/completions"], handleChatCompletions);
+
+// ---------------------------------------------------------------------------
+// Anthropic Messages API proxy
+// ---------------------------------------------------------------------------
+
+/** Anthropic `usage` block → ledger shape. */
+function anthropicUsage(u: { input_tokens?: unknown; output_tokens?: unknown } | undefined | null) {
+  if (!u) return undefined;
+  const promptTokens = Number(u.input_tokens) || undefined;
+  const completionTokens = Number(u.output_tokens) || undefined;
+  if (promptTokens === undefined && completionTokens === undefined) return undefined;
+  return { promptTokens, completionTokens, totalTokens: (promptTokens ?? 0) + (completionTokens ?? 0) };
+}
+
+/** Anthropic SSE carries input tokens in `message_start` and cumulative output tokens in `message_delta`. */
+function parseAnthropicStreamUsage(text: string) {
+  let input = 0;
+  let output = 0;
+  for (const line of text.split("\n")) {
+    if (!line.startsWith("data: {")) continue;
+    try {
+      const parsed = JSON.parse(line.slice(5).trim()) as {
+        type?: string;
+        message?: { usage?: { input_tokens?: unknown; output_tokens?: unknown } };
+        usage?: { input_tokens?: unknown; output_tokens?: unknown };
+      };
+      const usage = parsed.type === "message_start" ? parsed.message?.usage : parsed.usage;
+      input = Math.max(input, Number(usage?.input_tokens) || 0);
+      output = Math.max(output, Number(usage?.output_tokens) || 0);
+    } catch { /* partial JSON in the tail window */ }
+  }
+  return anthropicUsage({ input_tokens: input, output_tokens: output });
+}
+
+/**
+ * POST /v1/messages
+ *
+ * Claude models are served through the admin combo router, which accepts and
+ * returns the Anthropic-native shape. Pricing and settlement follow the same
+ * per-token rule as chat completions (counted input incl. `system`, required
+ * max_tokens as the output estimate).
+ */
+async function handleAnthropicMessages(req: Request, res: Response): Promise<void> {
+  const model = resolveModel(req, res);
+  if (!model) return;
+
+  if (!config.internalComboKey) {
+    res.status(503).json({ type: "error", error: { type: "api_error", message: "Anthropic endpoint is not configured on this gateway" } });
+    return;
+  }
+  const maxTokens = req.body?.max_tokens;
+  if (!Number.isInteger(maxTokens) || (maxTokens as number) <= 0) {
+    // Mirroring the native Anthropic error shape for SDK compatibility.
+    res.status(400).json({ type: "error", error: { type: "invalid_request_error", message: "max_tokens: Field required" } });
+    return;
+  }
+
+  const upstreamModel = upstreamModelId(model);
+  const wantsStream = req.body?.stream === true;
+  const payer = extractPayer(req.headers["payment-signature"] as string | undefined);
+  const quotedUsd = await quotePrice(req.body);
+
+  try {
+    const upstream = await fetch(config.comboUpstreamBaseUrl + "/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "accept-encoding": "identity",
+        authorization: "Bearer " + config.internalComboKey,
+        ...(req.get("anthropic-version") ? { "anthropic-version": req.get("anthropic-version") as string } : {}),
+      },
+      body: JSON.stringify({ ...req.body, model: upstreamModel }),
+    });
+
+    // Non-2xx: forward the upstream status so the x402 middleware cancels the
+    // verified payment instead of settling it on a failed request.
+    if (!upstream.ok || !upstream.body) {
+      const text = await upstream.text();
+      recordUsage({ ts: new Date().toISOString(), model, payer, upstreamStatus: upstream.status, quotedUsd });
+      console.error(`[anthropic] upstream ${upstream.status}: ${text.slice(0, 500)}`);
+      res.status(upstream.status).type("application/json").send(text);
+      return;
+    }
+
+    for (const [name, value] of upstream.headers) {
+      if (!HOP_BY_HOP.has(name.toLowerCase()) && name.toLowerCase() !== "content-type") {
+        res.setHeader(name, value);
+      }
+    }
+
+    if (wantsStream) {
+      res.status(upstream.status);
+      res.setHeader("content-type", "text/event-stream; charset=utf-8");
+      res.setHeader("cache-control", "no-cache, no-transform");
+      res.setHeader("x-accel-buffering", "no");
+
+      const reader = upstream.body.getReader();
+      const decoder = new TextDecoder();
+      let tail = "";
+      let carry = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const text = carry + decoder.decode(value, { stream: true });
+        tail = (tail + text).slice(-65536);
+        const lines = text.split("\n");
+        carry = lines.pop() ?? "";
+        for (const line of lines) res.write(rewriteStreamModel(line, upstreamModel) + "\n");
+      }
+      if (carry) res.write(rewriteStreamModel(carry, upstreamModel));
+      res.end();
+
+      const usage = parseAnthropicStreamUsage(tail);
+      const record = { ts: new Date().toISOString(), model, payer, upstreamStatus: upstream.status, quotedUsd, usage, actualCostUsd: actualCostUsd(model, usage) };
+      recordUsage(record);
+      logUsage(record);
+      return;
+    }
+
+    const body = Buffer.from(await upstream.arrayBuffer());
+    let out = body.toString("utf8");
+    let usage;
+    try {
+      const parsed = JSON.parse(out) as { model?: unknown; usage?: { input_tokens?: unknown; output_tokens?: unknown } };
+      usage = anthropicUsage(parsed?.usage);
+      if (parsed && typeof parsed === "object" && typeof parsed.model === "string" && parsed.model !== upstreamModel) {
+        parsed.model = upstreamModel;
+        out = JSON.stringify(parsed);
+      }
+    } catch { /* non-JSON upstream body passes through unchanged */ }
+    const record = { ts: new Date().toISOString(), model, payer, upstreamStatus: upstream.status, quotedUsd, usage, actualCostUsd: actualCostUsd(model, usage) };
+    recordUsage(record);
+    logUsage(record);
+
+    res.status(upstream.status);
+    res.setHeader("content-type", "application/json; charset=utf-8");
+    res.send(out);
+  } catch (error) {
+    console.error("[anthropic] upstream error:", error);
+    res.status(502).json({ type: "error", error: { type: "api_error", message: "upstream request failed" } });
+  }
+}
+
+app.post("/v1/messages", handleAnthropicMessages);
 
 // Free gpt-oss-20b tier — no x402, quota-capped per agent, combo-routed.
 if (freeGptOssEnabled) {
@@ -1373,6 +1571,15 @@ app.get("/.well-known/x402", (req: Request, res: Response) => {
         tags: ["chat", "llm", "gpt", "responses"],
         pricedBy: "input tokens + max_output_tokens, per-model $/1M-token rates",
       },
+      {
+        method: "POST",
+        path: "/v1/messages",
+        description: "Anthropic Messages API (Claude models); native format with system prompt, content blocks and anthropic SSE events",
+        price: chatPriceDisplay,
+        tags: ["chat", "llm", "anthropic", "claude"],
+        pricedBy: "input tokens (incl. system) + max_tokens, per-model $/1M-token rates",
+        exampleBody: { model: "claude-sonnet-5", max_tokens: 64, messages: [{ role: "user", content: "Hello" }] },
+      },
       ...(imagesEnabled ? [
         {
           method: "POST",
@@ -1502,7 +1709,7 @@ app.get("/.well-known/agent-card.json", (req: Request, res: Response) => {
     skill(
       "chat-completion",
       "GPT chat completions",
-      `OpenAI-compatible chat completions with ${models.length} GPT models, priced per token. Exact quote in the 402 challenge.`,
+      `OpenAI-compatible chat completions with ${models.length} chat models, priced per token. Exact quote in the 402 challenge.`,
       ["chat", "llm"],
       `POST ${origin}/v1/chat/completions {"model":"${models[0]?.id}","messages":[{"role":"user","content":"Hello"}]}`,
     ),
@@ -1512,6 +1719,13 @@ app.get("/.well-known/agent-card.json", (req: Request, res: Response) => {
       "OpenAI Responses API (alpha) translated to chat completions upstream.",
       ["chat", "responses"],
       `POST ${origin}/api/v1/responses {"model":"${models[0]?.id}","input":"Hello"}`,
+    ),
+    skill(
+      "anthropic-message",
+      "Anthropic Messages API (Claude)",
+      "Native Anthropic Messages API for the Claude family (haiku/sonnet/opus, see GET /v1/models): system prompt, content blocks, SSE events, required max_tokens. Same per-token x402 pricing.",
+      ["chat", "anthropic", "claude"],
+      `POST ${origin}/v1/messages {"model":"claude-sonnet-5","max_tokens":64,"messages":[{"role":"user","content":"Hello"}]}`,
     ),
   ];
   if (embeddingsEnabled) {
@@ -1669,6 +1883,14 @@ app.get("/service-endpoints.json", (req: Request, res: Response) => {
       pricing: { kind: "dynamic", formula: "input_tokens * input_rate + max_output_tokens * output_rate + overhead", models: chatPricing, overheadUsd: config.minChargeUsd },
       aliases: ["/v1/responses"],
       example: { model: models[0]?.id, input: "Hello" },
+    },
+    {
+      method: "POST",
+      path: "/v1/messages",
+      access: "x402",
+      description: "Anthropic Messages API (Claude); native request/response shape, same per-token pricing rule as chat",
+      pricing: { kind: "dynamic", formula: "input_tokens (incl. system) * input_rate + max_tokens * output_rate + overhead", models: chatPricing, overheadUsd: config.minChargeUsd },
+      example: { model: "claude-sonnet-5", max_tokens: 64, messages: [{ role: "user", content: "Hello" }] },
     },
     { method: "GET", path: "/v1/models", access: "free", description: "Model catalog with pricing and context windows" },
     { method: "GET", path: "/health", access: "free", description: "Service liveness and configuration summary" },
@@ -2259,7 +2481,7 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
       version: "1.0.0",
       description:
         `Pay-per-request API access via x402 on ${chain.networkName}. ` +
-        `${models.length} GPT models, ${imageModels.length} image models` +
+        `${models.length} chat models (GPT + Claude), ${imageModels.length} image models` +
         (jevEnabled ? ", and Jev structured decisions" : "") + "; no accounts or client API keys.",
       contact: {
         name: config.serviceName,
@@ -2768,6 +2990,27 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
           responses: responsesApiResponses,
         },
       },
+      "/v1/messages": {
+        post: {
+          summary: "Create a message (Anthropic Messages API)",
+          description: ANTHROPIC_DESCRIPTION,
+          operationId: "createAnthropicMessage",
+          security: [{ x402: [] }],
+          "x-worked-example": workedExample("POST", "/v1/messages", { model: "claude-sonnet-5", max_tokens: 8, messages: [{ role: "user", content: "Hello" }] }, true),
+          "x-payment-info": paymentInfo,
+          "x-pricing": modelPricing,
+          requestBody: {
+            required: true,
+            content: { "application/json": { schema: anthropicInputSchema, example: anthropicInputExample } },
+          },
+          responses: {
+            "200": { description: "Anthropic message object (or SSE event stream when stream=true)" },
+            "400": { description: "Invalid request (unknown model, missing max_tokens)" },
+            "402": paidResponses["402"],
+            "503": { description: "Anthropic endpoint not configured on this gateway" },
+          },
+        },
+      },
       "/v1/models": {
         get: {
           summary: "List available models",
@@ -2809,11 +3052,11 @@ app.get("/llms.txt", (req: Request, res: Response) => {
     [
       `# ${config.serviceName}`,
       "",
-      `> Pay-per-use GPT models via x402 micropayments on ${chain.networkName}.`,
+      `> Pay-per-use GPT and Claude models via x402 micropayments on ${chain.networkName}.`,
       "",
-      `GPT API access with pay-per-request pricing: ${models.length} GPT models behind one`,
-      "OpenAI-compatible endpoint. No accounts, no subscriptions, no API keys — an agent pays",
-      `per request in ${chain.asset} over the x402 protocol.`,
+      `AI API access with pay-per-request pricing: ${models.length} chat models behind one`,
+      "OpenAI-compatible endpoint (Anthropic Messages API at /v1/messages). No accounts,",
+      `no subscriptions, no API keys — an agent pays per request in ${chain.asset} over the x402 protocol.`,
       "",
       "## Payment",
       "",
@@ -2839,6 +3082,11 @@ app.get("/llms.txt", (req: Request, res: Response) => {
       "",
       `POST ${origin}/api/v1/responses`,
       "  OpenAI-compatible Responses API, alpha (paid).",
+      "",
+      `POST ${origin}/v1/messages`,
+      "  Anthropic Messages API for Claude models (paid). Native Anthropic shape:",
+      "  system prompt, content blocks, anthropic-version header, SSE events; max_tokens required.",
+      "  Price = input_tokens (incl. system) * input_rate + max_tokens * output_rate.",
       "",
       `GET ${baseUrl}/models`,
       "  List all available models with pricing (free).",

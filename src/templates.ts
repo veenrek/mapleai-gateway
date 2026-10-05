@@ -199,7 +199,7 @@ export function docVars(origin: string): DocVars {
     MODEL_COUNT: String(models.length),
     IMAGE_FEATURE: (imagesEnabled ? ', "' + Object.keys(imageRates).length + ' image models"' : '') +
       (jevEnabled ? ', "Jev structured decisions"' : ''),
-    HOME_MODEL_SUMMARY: models.length + ' GPT models behind one OpenAI-compatible endpoint.' +
+    HOME_MODEL_SUMMARY: models.length + ' chat models (GPT + Claude) behind one OpenAI-compatible endpoint, plus Anthropic Messages API at /v1/messages.' +
       (imagesEnabled ? ' ' + Object.keys(imageRates).length + ' image models for generation and editing.' : '') +
       (jevEnabled ? ' Jev structured decisions via a separate SystemOne endpoint.' : ''),
     MIN_PRICE: money(minPrice),
@@ -316,7 +316,7 @@ export function docVars(origin: string): DocVars {
       ? "Arc adds a live estimate of settlement gas to the model cost. The exact USDC amount is in the 402 response."
       : "The final quote includes the configured payment overhead and minimum charge. The exact USDC amount is in the 402 response.",
     DEVELOPER_JAVASCRIPT: developerJavascriptHtml(config.network, chain.assetAddress),
-    OG_DESCRIPTION: models.length + ' GPT models' +
+    OG_DESCRIPTION: models.length + ' chat models (GPT + Claude)' +
       (imagesEnabled ? ', ' + Object.keys(imageRates).length + ' image models' : '') +
       (jevEnabled ? ', and Jev structured decisions' : '') +
       '. Pay per request in ' + chain.asset + ' on ' + chain.label + ' with x402.',

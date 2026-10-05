@@ -1,6 +1,7 @@
 # MapleAI MCP — регистрационные тексты для реестров
 
-Карточки готовы к копипасте. Версия пакета: `mapleai-mcp@0.3.1`.
+Карточки готовы к копипасте. Версия пакета: `mapleai-mcp@0.3.2`
+(в package.json уже 0.3.2; на 05.10.2026 в npm latest — 0.3.1, т.е. 0.3.2 ещё ждёт `npm publish`).
 
 ## Подготовка перед подачей
 
@@ -14,7 +15,7 @@ npm publish --access public   # нужен логин npm (2FA)
 После публикации мгновенная проверка из чистого каталога:
 
 ```sh
-npx -y -p mapleai-mcp@0.3.1 mapleai-quickstart --network base
+npx -y -p mapleai-mcp@0.3.2 mapleai-quickstart --network base
 ```
 
 ---
@@ -39,11 +40,12 @@ npx -y -p mapleai-mcp@0.3.1 mapleai-quickstart --network base
 
 Подача через «Add server» → GitHub URL репозитория (`https://github.com/veenrek/mapleai-gateway`, пакет — `packages/mapleai-mcp`). Текст описания:
 
-> Local stdio MCP server for MapleAI's pay-per-request AI API. Eight tools: three
-> free calls (model catalog, 2048-dim embeddings, prepaid key status), four
-> x402-paid calls (chat completions, Jev structured decisions, autonomous agent
-> execution, prepaid key purchase) and prepaid chat, which spends an issued key
-> budget with no wallet.
+> Local stdio MCP server for MapleAI's pay-per-request AI API. Nine tools: three
+> free calls (model catalog, 2048-dim embeddings, prepaid key status), five
+> x402-paid calls (GPT chat completions, Claude models over the Anthropic
+> Messages API, Jev structured decisions, autonomous agent execution, prepaid
+> key purchase) and prepaid chat, which spends an issued key budget with no
+> wallet.
 > Implements full x402 payment locally: reads the 402 challenge, verifies network,
 > asset, recipient and the MCP_MAX_PAYMENT_USDC / MCP_MAX_PREPAID_USDC spending
 > caps, then signs with the configured wallet. Networks: Solana, Base, Polygon,
@@ -70,13 +72,13 @@ Config для клиента (нужен в карточке Glama):
 }
 ```
 
-Tools quality report Glama прогонит сам (у нас 8 тулз с полными схемами + smoke-test в репо).
+Tools quality report Glama прогонит сам (у нас 9 тулз с полными схемами + smoke-test в репо).
 
 ## 3. mcp.so
 
 Форма «Submit MCP Server» с GitHub-ссылкой (`https://github.com/veenrek/mapleai-gateway`) и описанием. Short description (≤160 символов):
 
-> Pay-per-request GPT, embeddings and agents with x402 USDC - 4 networks, 8 tools, zero accounts.
+> Pay-per-request GPT and Claude, embeddings and agents with x402 USDC - 4 networks, 9 tools, zero accounts.
 
 Long description — как у Glama (п.2).
 
@@ -109,6 +111,8 @@ startCommand:
 
 ## 6. A2A-реестры (дополнительные каналы)
 
-Agent card уже жив: `https://sol.mapleai.shop/.well-known/agent-card.json` (8 skills).
+Agent card уже жив: `https://sol.mapleai.shop/.well-known/agent-card.json` (12 skills на 05.10.2026:
+chat-completion, responses-api, anthropic-message, embed-text, text-to-speech, speech-to-text,
+chat-free-gptoss, image-generation, image-editing, jev-decision, buy-prepaid-key, prepaid-key-status).
 Если встретишь каталог A2A-агентов — подаётся именно этот URL плюс
 `https://base.mapleai.shop/.well-known/agent-card.json` и т.д. (карта генерируется из живого конфига).

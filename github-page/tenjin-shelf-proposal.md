@@ -111,9 +111,9 @@ Provider meta (shared)
   "capabilityId": "mapleai-image-generate",
   "category": "image",
   "provider": "MapleAI",
-  "capabilityDescription": "Text-to-image with gpt-image-2. Returns URL or b64_json. Sizes 512x512..1792x1024.",
+  "capabilityDescription": "Text-to-image with gpt-image-2 (also gpt-image-2.5 family and grok-imagine). Returns URL or b64_json. Base size 1024x1024, 2K variants available.",
   "endpoint": "https://base.mapleai.shop/api/v1/images/generations",
-  "providerPriceAtomic": "21000 (1024x1024), from 12000 (512x512)",
+  "providerPriceAtomic": "22500 (gpt-image-2 1024x1024 incl. Base fee)",
   "contract": {
     "request": {
       "url": "https://base.mapleai.shop/api/v1/images/generations",
@@ -135,7 +135,7 @@ Provider meta (shared)
   "provider": "MapleAI",
   "capabilityDescription": "Image-to-image edit with gpt-image-2: pass a source image URL and an edit instruction, get an edited PNG.",
   "endpoint": "https://base.mapleai.shop/api/v1/images/image2image",
-  "providerPriceAtomic": "21000 (1024x1024)",
+  "providerPriceAtomic": "22500 (1024x1024 incl. Base fee)",
   "contract": {
     "request": {
       "url": "https://base.mapleai.shop/api/v1/images/image2image",
@@ -157,7 +157,7 @@ Provider meta (shared)
   "provider": "MapleAI",
   "capabilityDescription": "One x402 payment mints an oms_buy_... bearer key for https://mapleai.shop/v1 (our prepaid OpenAI gateway). Empty body buys the cheapest 100k-token pack currently on sale. Good for repeated calls: pay once per pack instead of per request. The key also spends directly on the purchase gateway with no x402: POST {origin}/prepaid/v1/chat/completions (Bearer), and free key status: GET {origin}/prepaid/status (apex equivalent: GET https://mapleai.shop/v1/prepaid/status).",
   "endpoint": "https://base.mapleai.shop/prepaid/codes/auto",
-  "providerPriceAtomic": "8000 (cheapest pack) up to 141000",
+  "providerPriceAtomic": "9500 (cheapest auto pack on Base: $0.007 + $0.0025 fee) up to 2802500 (1M-token gpt-5.6-sol pack incl. fee)",
   "contract": {
     "request": {
       "url": "https://base.mapleai.shop/prepaid/codes/auto",
@@ -202,6 +202,28 @@ Provider meta (shared)
 }
 ```
 
+## 8. claude-messages — Anthropic Messages API
+
+```json
+{
+  "capabilityId": "mapleai-claude-messages",
+  "category": "text",
+  "provider": "MapleAI",
+  "capabilityDescription": "Native Anthropic Messages API (content blocks, system prompt, anthropic SSE events, max_tokens required). 10 live Claude models: haiku-4-5 $0.50/$2.50, sonnet-4.5/4.6 $1.50/$7.50, sonnet-5/5.5 $1/$5, opus-4.6/4.7/4.8/5 $2.50/$12.50, opus-5.5 $2/$10 per 1M in/out. Works with the Anthropic SDK pointed at this base URL.",
+  "endpoint": "https://base.mapleai.shop/v1/messages",
+  "providerPriceAtomic": "token-priced per model ($0.50-$2.50 per 1M in, $2.50-$12.50 per 1M out) + per-network fee",
+  "contract": {
+    "request": {
+      "url": "https://base.mapleai.shop/v1/messages",
+      "method": "POST",
+      "headers": { "content-type": "application/json", "anthropic-version": "2023-06-01" },
+      "body": { "model": "claude-haiku-4-5", "max_tokens": 256, "messages": [{ "role": "user", "content": "<prompt>" }] }
+    },
+    "resultSchema": { "$ref": "Anthropic Message object" }
+  }
+}
+```
+
 ---
 
 ## Outreach draft (send later — saved here, not sent)
@@ -216,7 +238,8 @@ Subject: MapleAI as a shelf provider — your CLI already drove 212 paid Jev cal
 >
 > We'd like to be on the shelf officially. MapleAI is an x402-native
 > OpenAI-compatible API on Base (also Solana, Polygon, Arc): cheap GPT chat from
-> $0.001, images at $0.02, structured decisions (Jev), free 2048-dim embeddings,
+> $0.001, Claude via the native Anthropic Messages API (10 models, from $0.50/1M
+> input), images at $0.02, structured decisions (Jev), free 2048-dim embeddings,
 > and a one-payment self-onboarding tap that mints prepaid keys.
 >
 > Full capability mapping in Tenjin router vocabulary is attached

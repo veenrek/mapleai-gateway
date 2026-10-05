@@ -86,6 +86,7 @@
         <dl class="endpoint-list">
           <div><dt>Chat completions</dt><dd><code>POST {{API_BASE}}/chat/completions</code></dd></div>
           <div><dt>Responses</dt><dd><code>POST {{API_BASE}}/responses</code></dd></div>
+          <div><dt>Anthropic Messages (Claude)</dt><dd><code>POST {{API_BASE}}/messages</code></dd></div>
           <div><dt>Model catalog</dt><dd><a href="/v1/models"><code>GET {{API_BASE}}/models</code></a></dd></div>
           <div><dt>Free embeddings</dt><dd><a href="/free-embeddings"><code>POST {{API_BASE}}/embeddings</code></a></dd></div>
           <div><dt>OpenAPI</dt><dd><a href="/openapi.json"><code>GET {{ORIGIN}}/openapi.json</code></a></dd></div>
@@ -130,7 +131,7 @@
       </section>
       <section id="mcp">
         <h2>MCP for agent clients</h2>
-        <p>Use the local stdio server with Node.js 20+. It exposes eight tools — free <code>list_models</code>, <code>embed_text</code>, <code>prepaid_status</code>, paid <code>chat_completion</code>, <code>jev_decide</code>, <code>agent_execute</code>, <code>buy_prepaid_tap</code>, and <code>prepaid_chat</code> which spends a prepaid key with no wallet. The server signs the x402 challenge and retries the API request; the agent client only needs standard MCP tool support.</p>
+        <p>Use the local stdio server with Node.js 20+. It exposes nine tools — free <code>list_models</code>, <code>embed_text</code>, <code>prepaid_status</code>, paid <code>chat_completion</code>, <code>claude_message</code>, <code>jev_decide</code>, <code>agent_execute</code>, <code>buy_prepaid_tap</code>, and <code>prepaid_chat</code> which spends a prepaid key with no wallet. The server signs the x402 challenge and retries the API request; the agent client only needs standard MCP tool support.</p>
         <div class="snippet"><div class="snippet-title">Check a quote without paying</div><pre><code>npx -y -p mapleai-mcp mapleai-quickstart --network polygon</code></pre></div>
         <div class="snippet"><div class="snippet-title">Client MCP configuration</div><pre><code>{
   "mcpServers": {

@@ -1,17 +1,17 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.veenrek/mapleai-mcp",
-  "description": "Pay-per-request GPT chat, embeddings, agents and prepaid keys with local x402 USDC signing",
+  "description": "GPT and Claude chat, embeddings, agents, prepaid keys; local x402 USDC signing",
   "repository": {
     "url": "https://github.com/veenrek/mapleai-gateway",
     "source": "github"
   },
-  "version": "0.3.1",
+  "version": "0.3.2",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "mapleai-mcp",
-      "version": "0.3.1",
+      "version": "0.3.2",
       "transport": {
         "type": "stdio"
       },

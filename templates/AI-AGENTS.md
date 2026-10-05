@@ -97,6 +97,7 @@ Free list of available models with pricing and context windows.
 | POST | `/api/v1/chat/completions` | OpenAI Chat Completions (alias) |
 | POST | `/api/v1/responses` | OpenAI Responses API (alpha) |
 | POST | `/v1/responses` | OpenAI Responses API (alpha) |
+| POST | `/v1/messages` | Anthropic Messages API (Claude) |
 
 {{AGENT_AUDIO_ENDPOINTS}}
 {{AGENT_IMAGE_ENDPOINTS}}
@@ -120,6 +121,15 @@ model provider) are cancelled, not settled.
 - **Never reuse or fan out a `PAYMENT-SIGNATURE`.** Replays and parallel fan-out of one signed payload are rejected after the first settlement (`settlement_unconfirmed`).
 - **On 402, start over**: fetch a fresh challenge and sign again — never pay against a stale quote.
 
+## Anthropic Messages API (Claude)
+
+`POST /v1/messages` speaks the native Anthropic Messages API: `model` (Claude family —
+`claude-haiku-4-5`, `claude-sonnet-4-5/4-6/5/5-5`, `claude-opus-4-6/4-7/4-8/5/5-5`;
+bare ids or the `anthropic/...` catalog form, full list with prices in `GET {{API_BASE}}/models`),
+required `max_tokens`, optional `system` prompt, `stream: true` for Anthropic SSE events.
+Point the Anthropic SDK at `{{API_BASE}}` as `baseURL`; authentication and pricing are
+the same x402 flow as above (402 challenge first, then retry with `PAYMENT-SIGNATURE`).
+
 ## Agents API (`agent.execution`)
 
 `POST /v1/agents/execute` runs a multi-step agent on a natural-language task. Payment: x402, or a prepaid `oms_buy_` Bearer key on the same URL.
@@ -137,6 +147,8 @@ model provider) are cancelled, not settled.
 ### Tools
 - `calculator` — arithmetic only: `{"expression": "2*(3+4)/5"}` (digits, `+ - * / % ^ ( )`)
 - `fetch_url` — downloads public page text: `{"url": "https://example.com"}` (max 3 per task)
+
+**Deterministic math:** raw chat models approximate arithmetic and occasionally slip on multi-digit carries (we measured it live). For anything with sums, rates, conversions or any numbers that must be exact, run the task through `/v1/agents/execute` with `calculator` (and `data_analysis`) instead of plain chat — the result is computed, not guessed.
 - `web_search` — web search via keyless Exa (DuckDuckGo fallback): `{"query": "..."}` → title/url/snippet (max 3 per task)
 - `data_analysis` — descriptive stats, no code execution: `{"data": [1,2,3], "field": "price"}` → count/sum/mean/median/min/max/stdev
 - `code_exec` — sandboxed code execution: `{"language": "python", "code": "print(2+2)"}` with python / javascript / typescript → stdout/stderr + exit code; no network, no filesystem, no persistence (max 3 per task, $0.002 per call)

@@ -1,6 +1,6 @@
 # MapleAI MCP
 
-Local stdio MCP server for MapleAI model calls paid with x402 USDC. The MCP client does not need native x402 support. The local server reads the HTTP 402 challenge, checks the network, asset, recipient and spending limit, signs with a local wallet, and retries the request.
+Local stdio MCP server for MapleAI model calls paid with x402 USDC — GPT via the OpenAI-compatible API and Claude via the Anthropic Messages API. The MCP client does not need native x402 support. The local server reads the HTTP 402 challenge, checks the network, asset, recipient and spending limit, signs with a local wallet, and retries the request.
 
 Requires Node.js 20 or newer.
 
@@ -24,6 +24,26 @@ For Base and Arc, use `EVM_PRIVATE_KEY` and the corresponding `MCP_PAY_TO_BASE` 
 
 ## MCP client
 
+**Claude Code** — one command:
+
+```sh
+claude mcp add mapleai \
+  -e EVM_PRIVATE_KEY=0xYOUR_PRIVATE_KEY \
+  -e MCP_PAY_TO_POLYGON=0x63db6eaf635a31bbc6714fe37bdc85243864f611 \
+  -- npx -y -p mapleai-mcp mapleai-mcp
+```
+
+**Codex (OpenAI)** — in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.mapleai]
+command = "npx"
+args = ["-y", "-p", "mapleai-mcp", "mapleai-mcp"]
+env = { EVM_PRIVATE_KEY = "0xYOUR_PRIVATE_KEY", MCP_PAY_TO_POLYGON = "0x63db6eaf635a31bbc6714fe37bdc85243864f611" }
+```
+
+**Claude Desktop, Cursor and other JSON-config clients:**
+
 ```json
 {
   "mcpServers": {
@@ -41,6 +61,8 @@ For Base and Arc, use `EVM_PRIVATE_KEY` and the corresponding `MCP_PAY_TO_BASE` 
 }
 ```
 
+On Windows, if the client cannot find `npx`, wrap it: `"command": "cmd", "args": ["/c", "npx", "-y", "-p", "mapleai-mcp", "mapleai-mcp"]`.
+
 Tools:
 
 | Tool | Cost | Purpose |
@@ -49,6 +71,7 @@ Tools:
 | `embed_text` | free | 2048-dim embeddings (query/passage) |
 | `prepaid_status` | free | Prepaid key validity and remaining tokens |
 | `chat_completion` | x402 per call | GPT chat completions |
+| `claude_message` | x402 per call | Claude models via the Anthropic Messages API (haiku/sonnet/opus family — current ids via `list_models`; max_tokens required) |
 | `jev_decide` | x402 per call | Jev structured decisions |
 | `agent_execute` | x402 per call | Autonomous agent execution (multi-step reasoning; calculator/fetch_url/web_search/data_analysis tools, plus code_exec where a sandbox executor is deployed; engines agents/oss-20b cheap and agents/gpt-6-sol premium; stream=true streams SSE step events) |
 | `buy_prepaid_tap` | $0.008-$2.80 by pack | Issue a prepaid API key for https://mapleai.shop/v1 (default: smallest pack of the cheapest model on sale; optional model + tokens, price = tokens x input rate) |
