@@ -123,8 +123,9 @@ model provider) are cancelled, not settled.
 
 ## Anthropic Messages API (Claude)
 
-`POST /v1/messages` speaks the native Anthropic Messages API: `model` (`claude-sonnet-5`,
-`claude-opus-4-8`, `claude-opus-5` — bare ids or the `anthropic/...` catalog form),
+`POST /v1/messages` speaks the native Anthropic Messages API: `model` (Claude family —
+`claude-haiku-4-5`, `claude-sonnet-4-5/4-6/5/5-5`, `claude-opus-4-6/4-7/4-8/5/5-5`;
+bare ids or the `anthropic/...` catalog form, full list with prices in `GET {{API_BASE}}/models`),
 required `max_tokens`, optional `system` prompt, `stream: true` for Anthropic SSE events.
 Point the Anthropic SDK at `{{API_BASE}}` as `baseURL`; authentication and pricing are
 the same x402 flow as above (402 challenge first, then retry with `PAYMENT-SIGNATURE`).

@@ -281,7 +281,7 @@ const anthropicInputSchema = {
   type: "object",
   required: ["model", "max_tokens", "messages"],
   properties: {
-    model: { type: "string", description: "Claude model id (claude-sonnet-5, claude-opus-4-8, claude-opus-5)" },
+    model: { type: "string", description: "Claude model id (claude-haiku-4-5, claude-sonnet-*, claude-opus-* — full list in GET /v1/models)" },
     max_tokens: { type: "integer", minimum: 1, description: "Required by the Anthropic API" },
     system: { type: "string", description: "System prompt (string or array of text blocks)" },
     messages: {
@@ -1723,7 +1723,7 @@ app.get("/.well-known/agent-card.json", (req: Request, res: Response) => {
     skill(
       "anthropic-message",
       "Anthropic Messages API (Claude)",
-      "Native Anthropic Messages API for claude-sonnet-5, claude-opus-4-8 and claude-opus-5: system prompt, content blocks, SSE events, required max_tokens. Same per-token x402 pricing.",
+      "Native Anthropic Messages API for the Claude family (haiku/sonnet/opus, see GET /v1/models): system prompt, content blocks, SSE events, required max_tokens. Same per-token x402 pricing.",
       ["chat", "anthropic", "claude"],
       `POST ${origin}/v1/messages {"model":"claude-sonnet-5","max_tokens":64,"messages":[{"role":"user","content":"Hello"}]}`,
     ),
