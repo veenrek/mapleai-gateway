@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "mapleai": {
+      "command": "npx",
+      "args": ["-y", "-p", "mapleai-mcp", "mapleai-mcp"],
+      "env": {
+        "EVM_PRIVATE_KEY": "0xYOUR_PRIVATE_KEY",
+        "MCP_PAY_TO_POLYGON": "0x63db6eaf635a31bbc6714fe37bdc85243864f611",
+        "MCP_MAX_PAYMENT_USDC": "0.10",
+        "MCP_MAX_PREPAID_USDC": "3.00"
+      }
+    }
+  }
+}

@@ -1,0 +1,71 @@
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { config } from "./config.js";
+
+type EmbeddingFailure = { source: "validation" | "upstream" | "transport"; reason: string; message?: string };
+type EmbeddingEvent = { ts: string; domain: string; model?: string; status: number; latencyMs: number; failure?: EmbeddingFailure };
+type Bucket = { requests: number; successful: number; errors: number };
+type Stats = { total: number; successful: number; errors: number; byDomain: Record<string, Bucket>; byModel: Record<string, Bucket>; recent: EmbeddingEvent[] };
+
+const stats: Stats = { total: 0, successful: 0, errors: 0, byDomain: {}, byModel: {}, recent: [] };
+const recentLimit = 100;
+
+function bucket(map: Record<string, Bucket>, key: string): Bucket {
+  return map[key] ??= { requests: 0, successful: 0, errors: 0 };
+}
+function add(event: EmbeddingEvent, persist: boolean): void {
+  stats.total += 1;
+  const ok = event.status >= 200 && event.status < 300;
+  if (ok) stats.successful += 1; else stats.errors += 1;
+  for (const map of [stats.byDomain, stats.byModel]) {
+    const key = map === stats.byDomain ? event.domain : (event.model ?? "unknown");
+    const item = bucket(map, key); item.requests += 1; if (ok) item.successful += 1; else item.errors += 1;
+  }
+  stats.recent.push(event); if (stats.recent.length > recentLimit) stats.recent.splice(0, stats.recent.length - recentLimit);
+  if (persist) { try { appendFileSync(config.embeddingStatsFile, JSON.stringify(event) + "\n", { mode: 0o600 }); } catch (error) { console.error("[embeddings] stats write failed:", error); } }
+}
+
+if (existsSync(config.embeddingStatsFile)) {
+  try { for (const line of readFileSync(config.embeddingStatsFile, "utf8").split(/\r?\n/).filter(Boolean).slice(-recentLimit)) { const event = JSON.parse(line) as EmbeddingEvent; if (event && typeof event.domain === "string" && typeof event.status === "number") add(event, false); } }
+  catch (error) { console.error("[embeddings] stats load failed:", error); }
+}
+
+export function trackEmbeddingRequest(req: { get(name: string): string | undefined; body?: { model?: unknown } }, res: { statusCode: number; locals: Record<string, unknown>; once(event: string, callback: () => void): void }, model: string): void {
+  const started = Date.now();
+  res.once("finish", () => add({ ts: new Date().toISOString(), domain: req.get("host") ?? "unknown", model, status: res.statusCode, latencyMs: Date.now() - started, failure: res.locals.embeddingFailure as EmbeddingFailure | undefined }, true));
+}
+export function embeddingStats() { return JSON.parse(JSON.stringify(stats)) as Stats; }
+
+export function recordEmbeddingData(
+  body: unknown,
+  raw: string,
+  status: number,
+  domain: string,
+  model: string,
+  failure?: { source: string; reason: string; message: string }
+): void {
+  let vectors: unknown = undefined;
+  if (status >= 200 && status < 300) {
+    try { vectors = (JSON.parse(raw) as { data?: Array<{ embedding?: unknown }> }).data?.map((item) => item.embedding); }
+    catch { vectors = undefined; }
+  }
+  const hasInput = !!body && typeof body === "object" && !Array.isArray(body) && "input" in body;
+  const input = hasInput ? (body as { input: unknown }).input : body;
+  let loggedInput = input;
+  let inputTruncated = false;
+  if (status >= 400) {
+    let serialized: string;
+    try { serialized = JSON.stringify(input) ?? "null"; }
+    catch { serialized = String(input); }
+    if (serialized.length > 16_384) {
+      loggedInput = { preview: serialized.slice(0, 16_384) };
+      inputTruncated = true;
+    }
+  }
+  const event = {
+    ts: new Date().toISOString(), domain, model, status, input: loggedInput, vectors,
+    ...(inputTruncated ? { inputTruncated: true } : {}),
+    ...(failure ? { failure } : {}),
+  };
+  try { appendFileSync(config.embeddingDataFile, JSON.stringify(event) + "\n", { mode: 0o600 }); }
+  catch (error) { console.error("[embeddings] data write failed:", error); }
+}

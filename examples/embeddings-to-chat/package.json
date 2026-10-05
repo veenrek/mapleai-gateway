@@ -1,0 +1,26 @@
+{
+  "name": "mapleai-embeddings-to-chat",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "demo": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@scure/base": "^2.4.0",
+    "@solana/kit": "^5.5.1",
+    "@x402/core": "^2.27.0",
+    "@x402/evm": "^2.27.0",
+    "@x402/svm": "^2.27.0",
+    "tsx": "^4.21.0",
+    "viem": "^2.48.11"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}

@@ -1,0 +1,7 @@
+node_modules/
+dist/
+package-check/
+*.tgz
+.env
+.env.local
+*.log

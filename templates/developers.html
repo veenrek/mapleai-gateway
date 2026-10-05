@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0F1117">
+  <meta name="description" content="{{BRAND}} API reference: GPT models, live prices, x402 payments, supported networks and code examples.">
+  <link rel="canonical" href="{{ORIGIN}}/developers">
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <title>Developers | {{BRAND}}</title>
+  <style>
+    :root { color-scheme: light dark; --bg:#fff; --bg-soft:#f8f9fb; --bg-card:#fff; --fg:#0b1220; --fg-muted:#5a6b85; --line:#e2e8f0; --accent:#5B8CFF; --claude:#CC9B7A; --code-bg:#0f172a; --code-fg:#e6edf7; --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace; --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+    @media (prefers-color-scheme: dark) { :root { --bg:#0F1117; --bg-soft:#171A23; --bg-card:#1E222E; --fg:#e8eef8; --fg-muted:#94a6c0; --line:#2a3142; --accent:#6f9bff; --code-bg:#0a0e1a; } }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; }
+    body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.6 var(--sans); -webkit-font-smoothing:antialiased; }
+    a { color:var(--accent); text-decoration:none; }
+    a:hover { text-decoration:underline; }
+    .wrap { max-width:1100px; margin:auto; padding:0 24px; }
+    header { border-bottom:1px solid var(--line); position:sticky; top:0; background:color-mix(in srgb,var(--bg) 90%,transparent); backdrop-filter:blur(10px); z-index:10; }
+    .bar { display:flex; align-items:center; gap:14px; height:64px; }
+    .brand { display:flex; align-items:center; gap:10px; font-size:17px; font-weight:620; color:var(--fg); }
+    .brand svg { flex:none; }
+    nav { margin-left:auto; display:flex; flex-wrap:wrap; gap:24px; font-size:14px; font-weight:500; }
+    nav a { color:var(--fg-muted); }
+    nav a:hover,nav a[aria-current] { color:var(--accent); text-decoration:none; }
+    main { padding-top:60px; padding-bottom:72px; }
+    .eyebrow { color:var(--fg-muted); font-size:13px; font-weight:650; text-transform:uppercase; }
+    h1 { font-size:clamp(32px,5.5vw,52px); line-height:1.1; margin:12px 0 20px; font-weight:660; }
+    h1 .hl { color:var(--claude); }
+    h2 { font-size:clamp(22px,3.2vw,28px); line-height:1.25; font-weight:620; margin:0 0 24px; }
+    h3 { font-size:16px; margin:0 0 10px; }
+    p { margin:0 0 16px; }
+    .lead { color:var(--fg-muted); max-width:60ch; font-size:18px; }
+    .intro { padding-bottom:48px; border-bottom:1px solid var(--line); }
+    .quicklinks { display:flex; flex-wrap:wrap; gap:10px 22px; margin-top:28px; }
+    .quicklinks a { font-weight:600; }
+    .layout { display:grid; grid-template-columns:170px minmax(0,1fr); gap:40px; padding-top:48px; }
+    aside { align-self:start; position:sticky; top:96px; display:grid; gap:11px; font-size:14px; }
+    aside a { color:var(--fg-muted); }
+    article { min-width:0; }
+    section { padding:0 0 56px; margin-bottom:40px; border-bottom:1px solid var(--line); scroll-margin-top:85px; }
+    section:last-child { border:0; margin:0; padding:0; }
+    .muted { color:var(--fg-muted); }
+    .table-scroll { overflow-x:auto; border:1px solid var(--line); border-radius:8px; background:var(--bg-card); }
+    table { width:100%; border-collapse:collapse; text-align:left; font-size:14px; }
+    th,td { padding:12px 14px; border-bottom:1px solid var(--line); white-space:nowrap; }
+    thead th { background:var(--bg-soft); font-size:12px; text-transform:uppercase; color:var(--fg-muted); }
+    tbody tr:last-child th,tbody tr:last-child td { border-bottom:0; }
+    tbody th { font-weight:600; }
+    tbody th span { display:block; color:var(--fg-muted); font-size:12px; font-weight:400; }
+    code,pre { font-family:var(--mono); }
+    code { overflow-wrap:anywhere; }
+    .endpoint-list { display:grid; gap:12px; margin:0; }
+    .endpoint-list div { display:grid; grid-template-columns:185px minmax(0,1fr); gap:8px; }
+    .endpoint-list dt { color:var(--fg-muted); }
+    .endpoint-list dd { margin:0; overflow-wrap:anywhere; }
+    .snippet { border:1px solid var(--line); border-radius:8px; background:var(--bg-card); overflow:hidden; margin-top:17px; }
+    .snippet-title { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; font-weight:650; font-size:13px; }
+    pre { background:var(--code-bg); color:var(--code-fg); padding:18px; margin:0; overflow:auto; font-size:13px; line-height:1.62; }
+    .note { border-left:2px solid var(--accent); padding:9px 14px; background:var(--bg-soft); color:var(--fg-muted); }
+    footer { border-top:1px solid var(--line); padding:32px 0 56px; color:var(--fg-muted); font-size:13.5px; }
+    .frow { display:flex; flex-wrap:wrap; gap:12px 24px; align-items:center; }
+    footer a { color:var(--fg-muted); }
+    footer a:hover { color:var(--accent); }
+    @media(max-width:720px) { .bar { height:auto; min-height:60px; padding-top:12px; padding-bottom:12px; flex-wrap:wrap; } nav { width:100%; gap:12px 18px; font-size:13px; margin:0; } .layout { display:block; } aside { position:static; display:flex; flex-wrap:wrap; gap:8px 18px; margin-bottom:30px; } .endpoint-list div { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+<header><div class="wrap bar">
+  <a class="brand" href="/"><svg width="28" height="28" viewBox="0 0 100 100" fill="none" aria-hidden="true"><circle cx="50" cy="50" r="38" stroke="currentColor" stroke-width="6" fill="none"/><path d="M30 50 L45 65 L70 35" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg><span>{{BRAND}}</span></a>
+  <nav aria-label="Main"><a href="/#quickstart">Quickstart</a><a href="/#models">Models</a><a href="/#payment">Payment</a><a href="/v1/models">API</a><a href="/developers" aria-current="page">Developers</a></nav>
+</div></header>
+<main class="wrap">
+  <div class="intro">
+    <div class="eyebrow">API reference / {{NETWORK_NAME}}</div>
+    <h1>Build with <span class="hl">{{BRAND}}</span></h1>
+    <p class="lead">OpenAI-compatible GPT requests paid in USDC through x402. This page shows the live model rates for {{NETWORK_NAME}}.</p>
+    <div class="quicklinks"><a href="/openapi.json">OpenAPI 3.1</a><a href="/v1/models">GET /v1/models</a><a href="/.well-known/x402">x402 discovery</a></div>
+  </div>
+  <div class="layout">
+    <aside aria-label="On this page"><a href="#endpoints">Endpoints</a><a href="#models">Models &amp; pricing</a><a href="#images">Images</a>{{DEVELOPER_AUDIO_NAV}}{{DEVELOPER_JEV_NAV}}{{DEVELOPER_AGENTS_NAV}}{{DEVELOPER_PREPAID_NAV}}<a href="#networks">Networks</a><a href="#curl">cURL</a><a href="#javascript">JavaScript</a><a href="#example">Example app</a><a href="#mcp">MCP</a></aside>
+    <article>
+      <section id="endpoints">
+        <h2>Endpoints</h2>
+        <dl class="endpoint-list">
+          <div><dt>Chat completions</dt><dd><code>POST {{API_BASE}}/chat/completions</code></dd></div>
+          <div><dt>Responses</dt><dd><code>POST {{API_BASE}}/responses</code></dd></div>
+          <div><dt>Model catalog</dt><dd><a href="/v1/models"><code>GET {{API_BASE}}/models</code></a></dd></div>
+          <div><dt>Free embeddings</dt><dd><a href="/free-embeddings"><code>POST {{API_BASE}}/embeddings</code></a></dd></div>
+          <div><dt>OpenAPI</dt><dd><a href="/openapi.json"><code>GET {{ORIGIN}}/openapi.json</code></a></dd></div>
+        </dl>
+      </section>
+      <section id="models">
+        <h2>Models &amp; pricing</h2>
+        <p class="muted">USD per 1 million tokens. Each request is quoted from input tokens and maximum output tokens before it runs. {{PAYMENT_NOTE}}</p>
+        <div class="table-scroll"><table><thead><tr><th>Model</th><th>Context</th><th>Input / 1M</th><th>Output / 1M</th></tr></thead><tbody>
+{{DEVELOPER_MODEL_ROWS}}
+        </tbody></table></div>
+      </section>
+{{DEVELOPER_IMAGES}}
+{{DEVELOPER_AUDIO}}
+{{DEVELOPER_JEV}}
+{{DEVELOPER_AGENTS}}
+{{DEVELOPER_NFT}}
+{{DEVELOPER_PREPAID}}
+      <section id="networks">
+        <h2>Supported networks</h2>
+        <p class="muted">Choose the domain for the network where your wallet holds USDC. Each domain has its own OpenAPI document and payment quote.</p>
+        <div class="table-scroll"><table><thead><tr><th>Network</th><th>CAIP-2</th><th>API origin</th></tr></thead><tbody>
+{{DEVELOPER_NETWORK_ROWS}}
+        </tbody></table></div>
+      </section>
+      <section id="curl">
+        <h2>cURL</h2>
+        <p>Request the resource once to receive the exact amount and payment requirements in the <code>PAYMENT-REQUIRED</code> header. Sign those requirements with an x402 wallet, then retry with <code>PAYMENT-SIGNATURE</code>.</p>
+        <div class="snippet"><div class="snippet-title">Get the payment quote</div><pre><code>curl -i {{API_BASE}}/chat/completions \
+  -H 'content-type: application/json' \
+  -d '{"model":"{{DEFAULT_MODEL}}","messages":[{"role":"user","content":"Hello"}],"max_tokens":64}'</code></pre></div>
+        <div class="snippet"><div class="snippet-title">Retry with a signed x402 payload</div><pre><code>curl {{API_BASE}}/chat/completions \
+  -H 'content-type: application/json' \
+  -H "PAYMENT-SIGNATURE: $PAYMENT_SIGNATURE" \
+  -d '{"model":"{{DEFAULT_MODEL}}","messages":[{"role":"user","content":"Hello"}],"max_tokens":64}'</code></pre></div>
+        <p class="muted">Use the same request body for both calls. <code>PAYMENT_SIGNATURE</code> is the base64 x402 payment payload signed by your wallet.</p>
+      </section>
+      <section id="example">
+        <h2>Embeddings to GPT example</h2>
+        <p class="muted">A runnable TypeScript app retrieves local FAQ context with free embeddings, then requests a paid GPT answer through x402. It supports Base and Solana and includes a quote-only mode.</p>
+        <p><a href="/examples/embeddings-to-chat/">Open the example project</a></p>
+      </section>
+      <section id="mcp">
+        <h2>MCP for agent clients</h2>
+        <p>Use the local stdio server with Node.js 20+. It exposes eight tools — free <code>list_models</code>, <code>embed_text</code>, <code>prepaid_status</code>, paid <code>chat_completion</code>, <code>jev_decide</code>, <code>agent_execute</code>, <code>buy_prepaid_tap</code>, and <code>prepaid_chat</code> which spends a prepaid key with no wallet. The server signs the x402 challenge and retries the API request; the agent client only needs standard MCP tool support.</p>
+        <div class="snippet"><div class="snippet-title">Check a quote without paying</div><pre><code>npx -y -p mapleai-mcp mapleai-quickstart --network polygon</code></pre></div>
+        <div class="snippet"><div class="snippet-title">Client MCP configuration</div><pre><code>{
+  "mcpServers": {
+    "mapleai": {
+      "command": "npx",
+      "args": ["-y", "-p", "mapleai-mcp", "mapleai-mcp"],
+      "env": {
+        "EVM_PRIVATE_KEY": "0x...",
+        "MCP_PAY_TO_POLYGON": "0x63db6eaf635a31bbc6714fe37bdc85243864f611",
+        "MCP_MAX_PAYMENT_USDC": "0.10",
+        "MCP_MAX_PREPAID_USDC": "3.00"
+      }
+    }
+  }
+}</code></pre></div>
+        <p class="note">After checking the quote, use <code>mapleai-quickstart --pay</code> with a funded local wallet to test settlement. For Base and Arc, set <code>MCP_PAY_TO_BASE</code> or <code>MCP_PAY_TO_ARC</code> to the verified recipient. For Solana use <code>SVM_PRIVATE_KEY</code> and <code>MCP_PAY_TO_SOLANA=9DbpH2Mf9D26ak4bASsv6KA4Ra4V571oLpiVdZjAjcU8</code>. The default network is Polygon; set <code>MCP_NETWORK</code> to change it. Metered calls are capped by <code>MCP_MAX_PAYMENT_USDC</code>, prepaid key packs by <code>MCP_MAX_PREPAID_USDC</code>. Keep the wallet key in your local MCP client configuration.</p>
+      </section>
+      <section id="javascript">
+        <h2>JavaScript</h2>
+        <p>Use the x402 SDK to sign the 402 challenge. Set <code>EVM_PRIVATE_KEY</code> for an EVM wallet, or provide a Solana keypair signer on Solana. The example caps payments at 0.10 USDC on EVM networks.</p>
+        <div class="snippet"><div class="snippet-title">Node.js 20+</div><pre><code>{{DEVELOPER_JAVASCRIPT}}
+
+const url = '{{API_BASE}}/chat/completions';
+const body = JSON.stringify({
+  model: '{{DEFAULT_MODEL}}',
+  messages: [{ role: 'user', content: 'Hello' }],
+  max_tokens: 64
+});
+const headers = { 'content-type': 'application/json' };
+const first = await fetch(url, { method: 'POST', headers, body });
+if (first.status !== 402) throw new Error('Expected payment challenge');
+const challenge = JSON.parse(Buffer.from(
+  first.headers.get('payment-required'), 'base64'
+).toString());
+if (challenge.resource.url !== url || challenge.accepts[0].network !== '{{NETWORK}}') {
+  throw new Error('Unexpected payment request');
+}
+const payload = await client.createPaymentPayload(challenge);
+delete payload.extensions?.quote; // optional display metadata is not required to settle
+const signature = Buffer.from(JSON.stringify(payload)).toString('base64');
+const paid = await fetch(url, {
+  method: 'POST',
+  headers: { ...headers, 'PAYMENT-SIGNATURE': signature },
+  body
+});
+if (!paid.ok) throw new Error('Request failed: ' + paid.status);
+console.log(await paid.json());</code></pre></div>
+        <p class="note">Install the x402 packages for your network. On EVM: <code>npm install @x402/core @x402/evm viem</code>. On Solana: <code>npm install @x402/svm @solana/kit @scure/base</code>. Keep private keys outside source code.</p>
+      </section>
+    </article>
+  </div>
+</main>
+<footer><div class="wrap frow"><span>&copy; {{YEAR}} {{BRAND}}</span><a href="/v1/models">Models</a><a href="/.well-known/x402">.well-known/x402</a><a href="/openapi.json">OpenAPI</a><a href="/llms.txt">llms.txt</a><a href="/health">Health</a><a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a></div></footer>
+</body>
+</html>
