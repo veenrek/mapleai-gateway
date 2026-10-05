@@ -611,6 +611,8 @@ async function handlePrepaidCodePurchase(req: Request, res: Response): Promise<v
         how_to: "Send the code as a Bearer token to the MapleAI prepaid endpoint. The code spends from its token budget; no per-request payment is needed.",
         authorization: `Bearer ${purchase.code}`,
         chat_endpoint: "POST https://mapleai.shop/v1/chat/completions",
+        gateway_chat_endpoint: "POST /prepaid/v1/chat/completions (same origin as this purchase, no x402)",
+        gateway_status_endpoint: "GET /prepaid/status (same origin, free)",
         model: purchase.model,
         example: {
           url: "https://mapleai.shop/v1/chat/completions",
@@ -1447,6 +1449,19 @@ app.get("/.well-known/x402", (req: Request, res: Response) => {
         pricedBy: "input rate * tokens + network settlement fee",
         exampleBody: {},
         outputExample: prepaidCodeOutputExample,
+      }, {
+        method: "POST",
+        path: "/prepaid/v1/chat/completions",
+        description: "Spend a prepaid key: OpenAI-compatible chat authorized with the oms_buy_ Bearer key instead of x402 (any /prepaid/v1/* subpath forwards the same way)",
+        price: "$0.00 (debits the key token budget)",
+        tags: ["prepaid", "chat", "key"],
+        exampleBody: { model: prepaidCodeExample.model, messages: [{ role: "user", content: "Hello" }] },
+      }, {
+        method: "GET",
+        path: "/prepaid/status",
+        description: "Prepaid key usage and status: validity plus tokens total/used/reserved/remaining (Bearer oms_buy_)",
+        price: "$0.00",
+        tags: ["prepaid", "key"],
       }] : []),
       {
         method: "GET",
@@ -1567,16 +1582,16 @@ app.get("/.well-known/agent-card.json", (req: Request, res: Response) => {
       skill(
         "buy-prepaid-key",
         "Buy a prepaid API key",
-        "Issues a prepaid OpenAI-compatible bearer key for one GPT model (100000-1000000 token budget).",
+        `Issues a prepaid OpenAI-compatible bearer key for one GPT model (100000-1000000 token budget). Spend it with no x402 at ${origin}/prepaid/v1/chat/completions (Bearer).`,
         ["prepaid", "budget"],
         `POST ${origin}/prepaid/codes/auto {}`,
       ),
       skill(
         "prepaid-key-status",
         "Check prepaid key status",
-        `Free validity and token-budget check for an oms_buy_ key: GET ${prepaidStatusUrl} with the key as Bearer.`,
+        `Free validity and token-budget check for an oms_buy_ key: GET ${origin}/prepaid/status (or ${prepaidStatusUrl}) with the key as Bearer.`,
         ["prepaid", "free"],
-        `GET ${prepaidStatusUrl} -H "Authorization: Bearer oms_buy_..."`,
+        `GET ${origin}/prepaid/status -H "Authorization: Bearer oms_buy_..."`,
       ),
     );
   }
@@ -1876,6 +1891,23 @@ app.get("/service-endpoints.json", (req: Request, res: Response) => {
       access: "prepaid_bearer",
       description: "OpenAI-compatible chat with a prepaid key; usage depletes the token budget",
       pricing: { kind: "prepaid_budget" },
+      auth: "Authorization: Bearer oms_buy_...",
+    });
+    endpoints.push({
+      method: "POST",
+      path: "/prepaid/v1/chat/completions",
+      access: "prepaid_bearer",
+      description: "Same-origin prepaid chat on this gateway: no x402; any /prepaid/v1/* subpath forwards the same way",
+      pricing: { kind: "prepaid_budget" },
+      auth: "Authorization: Bearer oms_buy_...",
+      example: { model: prepaidCodeExample.model, messages: [{ role: "user", content: "Hello" }] },
+    });
+    endpoints.push({
+      method: "GET",
+      path: "/prepaid/status",
+      access: "prepaid_bearer",
+      description: `Same-origin prepaid key status (free), equivalent of ${prepaidStatusUrl}`,
+      pricing: { kind: "free", usd: 0 },
       auth: "Authorization: Bearer oms_buy_...",
     });
   }
@@ -2267,6 +2299,13 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
             "exact price in the PAYMENT-REQUIRED header, sign the USDC transfer, then retry " +
             "with the signed payload in PAYMENT-SIGNATURE.",
         },
+        prepaidBearer: {
+          type: "http",
+          scheme: "bearer",
+          description:
+            "Prepaid buyer key (oms_buy_...) minted by POST /prepaid/codes or /prepaid/codes/auto. " +
+            "Spends from the key's token budget; no x402 payment is needed.",
+        },
       },
     },
     paths: {
@@ -2377,6 +2416,44 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
               "400": { description: "Invalid model or token amount" },
               "402": paidResponses["402"],
               "503": { description: "Prepaid key issuer unavailable" },
+            },
+          },
+        },
+        "/prepaid/v1/chat/completions": {
+          post: {
+            summary: "Chat completion with a prepaid key (no x402)",
+            operationId: "prepaidChatCompletion",
+            security: [{ prepaidBearer: [] }],
+            description:
+              "Spend a prepaid buyer key: same OpenAI-compatible body as /v1/chat/completions, " +
+              "authorized with Authorization: Bearer oms_buy_... instead of an x402 payment. " +
+              "Tokens are debited from the key's budget. /prepaid/v1/* forwards any OpenAI-compatible " +
+              "subpath (responses, embeddings, ...) to the prepaid API the same way.",
+            "x-worked-example": workedExample("POST", "/prepaid/v1/chat/completions", { model: prepaidCodeExample.model, messages: [{ role: "user", content: "Hello" }], max_tokens: 8 }, false),
+            requestBody: chatBody,
+            responses: {
+              "200": { description: "Chat completion" },
+              "401": { description: "Missing, invalid or exhausted prepaid key" },
+              "403": { description: "Model not allowed for this key" },
+              "502": { description: "Prepaid gateway unavailable" },
+            },
+          },
+        },
+        "/prepaid/status": {
+          get: {
+            summary: "Prepaid key usage and status (free)",
+            operationId: "prepaidKeyStatus",
+            security: [{ prepaidBearer: [] }],
+            description:
+              "Self-service status for a prepaid buyer key. The key itself is the Bearer credential. " +
+              "Returns valid, reason and tokens total/used/reserved/remaining; exhausted or disabled " +
+              "keys stay reachable so the holder learns why the key stopped working.",
+            "x-worked-example": workedExample("GET", "/prepaid/status", undefined, false),
+            responses: {
+              "200": { description: "Key validity, allowed models and token budget" },
+              "401": { description: "Missing or invalid prepaid key" },
+              "429": { description: "Too many status checks" },
+              "502": { description: "Prepaid gateway unavailable" },
             },
           },
         },
@@ -2817,8 +2894,12 @@ app.get("/llms.txt", (req: Request, res: Response) => {
         "  Buy a prepaid API key for one GPT model (paid). Budget in 100000-token steps",
         "  from 100000 to 1000000, priced at the model input rate plus settlement fee.",
         "  The key works at https://mapleai.shop/v1 (OpenAI-compatible).",
-        "GET https://mapleai.shop/v1/prepaid/status",
-        "  Check prepaid key usage and status (free). Send the prepaid key as the",
+        "POST " + origin + "/prepaid/v1/chat/completions",
+        "  Spend a prepaid key on this gateway (Bearer oms_buy_, no x402); usage",
+        "  depletes the token budget. Any /prepaid/v1/* subpath forwards the same way.",
+        "GET " + origin + "/prepaid/status",
+        "  Check prepaid key usage and status here (free), same as",
+        "  GET https://mapleai.shop/v1/prepaid/status. Send the prepaid key as the",
         "  Bearer token; returns valid, reason and tokens total/used/reserved/remaining.",
       ] : []),
       "",

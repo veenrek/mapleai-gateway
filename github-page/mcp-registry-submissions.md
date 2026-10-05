@@ -1,6 +1,6 @@
 # MapleAI MCP — регистрационные тексты для реестров
 
-Карточки готовы к копипасте. Версия пакета: `mapleai-mcp@0.2.0`.
+Карточки готовы к копипасте. Версия пакета: `mapleai-mcp@0.3.0`.
 
 ## Подготовка перед подачей
 
@@ -14,7 +14,7 @@ npm publish --access public   # нужен логин npm (2FA)
 После публикации мгновенная проверка из чистого каталога:
 
 ```sh
-npx -y -p mapleai-mcp@0.2.0 mapleai-quickstart --network base
+npx -y -p mapleai-mcp@0.3.0 mapleai-quickstart --network base
 ```
 
 ---
@@ -24,22 +24,24 @@ npx -y -p mapleai-mcp@0.2.0 mapleai-quickstart --network base
 Формат: pull request, добавление в README в раздел «Community Servers» (алфавитно по **M**):
 
 ```md
-- **[MapleAI MCP](https://github.com/<org>/<repo>/tree/master/packages/mapleai-mcp)** — GPT chat, free embeddings, image generation, Jev structured decisions and prepaid API keys. Local x402 USDC payments behind standard MCP tools (`list_models`, `embed_text`, `chat_completion`, `jev_decide`, `buy_prepaid_tap`, `prepaid_status`) on Solana, Base, Polygon and Arc.
+- **[MapleAI MCP](https://github.com/veenrek/mapleai-gateway/tree/main/packages/mapleai-mcp)** — GPT chat, free embeddings, autonomous agent execution, Jev structured decisions and prepaid API keys. Local x402 USDC payments behind standard MCP tools (`list_models`, `embed_text`, `chat_completion`, `jev_decide`, `agent_execute`, `buy_prepaid_tap`, `prepaid_status`, `prepaid_chat`) on Solana, Base, Polygon and Arc.
 ```
 
 Перед PR проверить чек-лист репозитория (`CONTRIBUTING.md` официального реестра).
 
 ## 2. Glama.ai (glama.ai/mcp/servers)
 
-Подача через «Add server» → GitHub URL репозитория. Текст описания:
+Подача через «Add server» → GitHub URL репозитория (`https://github.com/veenrek/mapleai-gateway`, пакет — `packages/mapleai-mcp`). Текст описания:
 
-> Local stdio MCP server for MapleAI's pay-per-request AI API. Six tools: two free
-> discovery endpoints (model catalog, 2048-dim embeddings) and four x402-paid calls
-> (chat completions, Jev structured decisions, prepaid key purchase and status).
+> Local stdio MCP server for MapleAI's pay-per-request AI API. Eight tools: three
+> free calls (model catalog, 2048-dim embeddings, prepaid key status), four
+> x402-paid calls (chat completions, Jev structured decisions, autonomous agent
+> execution, prepaid key purchase) and prepaid chat, which spends an issued key
+> budget with no wallet.
 > Implements full x402 payment locally: reads the 402 challenge, verifies network,
-> asset, recipient and the MCP_MAX_PAYMENT_USDC spending cap, then signs with the
-> configured wallet. Networks: Solana, Base, Polygon, Arc. Provider-listed on
-> x402scan with ownership-verified resources.
+> asset, recipient and the MCP_MAX_PAYMENT_USDC / MCP_MAX_PREPAID_USDC spending
+> caps, then signs with the configured wallet. Networks: Solana, Base, Polygon,
+> Arc. Provider-listed on x402scan with ownership-verified resources.
 
 Config для клиента (нужен в карточке Glama):
 
@@ -54,20 +56,21 @@ Config для клиента (нужен в карточке Glama):
         "SVM_PRIVATE_KEY": "YOUR_BASE58_KEY",
         "MCP_PAY_TO_BASE": "0x63db6eaf635a31bbc6714fe37bdc85243864f611",
         "MCP_PAY_TO_SOLANA": "9DbpH2Mf9D26ak4bASsv6KA4Ra4V571oLpiVdZjAjcU8",
-        "MCP_MAX_PAYMENT_USDC": "0.10"
+        "MCP_MAX_PAYMENT_USDC": "0.10",
+        "MCP_MAX_PREPAID_USDC": "3.00"
       }
     }
   }
 }
 ```
 
-Tools quality report Glama прогонит сам (у нас 6 тулз с полными схемами + smoke-test в репо).
+Tools quality report Glama прогонит сам (у нас 8 тулз с полными схемами + smoke-test в репо).
 
 ## 3. mcp.so
 
-Форма «Submit MCP Server» с GitHub-ссылкой и описанием. Short description (≤160 символов):
+Форма «Submit MCP Server» с GitHub-ссылкой (`https://github.com/veenrek/mapleai-gateway`) и описанием. Short description (≤160 символов):
 
-> Pay-per-request GPT, images and embeddings with x402 USDC - 4 networks, 6 tools, zero accounts.
+> Pay-per-request GPT, embeddings and agents with x402 USDC - 4 networks, 8 tools, zero accounts.
 
 Long description — как у Glama (п.2).
 
@@ -76,7 +79,7 @@ Long description — как у Glama (п.2).
 Заявка «Submit a server»:
 - Name: MapleAI MCP
 - Homepage: https://sol.mapleai.shop
-- GitHub: (URL репозитория из ветки publish)
+- GitHub: https://github.com/veenrek/mapleai-gateway (пакет в packages/mapleai-mcp)
 - Licensing: Proprietary (источник доступен)
 - Description (п.2, короче до 2-3 предложений).
 

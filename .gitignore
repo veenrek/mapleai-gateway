@@ -22,7 +22,19 @@ free-oss-data.jsonl
 agents-data.jsonl
 nexocap/cfg/
 nexocap/
-tools/key-test.sh
-tools/model-check.sh
-tools/node-upstream-test.mjs
-tools/proto-test.sh
+
+# Internal-only: ops, experiments and vendored apps stay off GitHub
+admin/
+agent-starter/
+deploy/
+tools/
+fingerprint/
+Open-MapleAI-Admin.cmd
+Open-MapleAI-Admin.ps1
+nexo-probe.mjs
+nexo-rate.mjs
+nexo-ua.mjs
+nexo-vps-test.sh
+blockrun-models.json
+models-after-cooldown.json
+gemini-*.wav

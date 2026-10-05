@@ -53,6 +53,49 @@ export function capJson(value: unknown): unknown {
   return capped;
 }
 
+/** Binary response types are never logged (audio/image bytes would be garbage). */
+const BINARY_PREFIXES = ["audio/", "image/", "application/octet-stream", "video/"];
+
+/**
+ * Captures an outbound response body (JSON text or SSE text) with a hard cap.
+ * Installed once per request: wraps res.write/res.end, keeps a bounded copy.
+ */
+export function captureResponse(res: ResponseLike, contentTypeHeader = "content-type"): { read: () => unknown } {
+  let buffer = "";
+  const write = res.write.bind(res);
+  const end = res.end.bind(res);
+  const binary = () => BINARY_PREFIXES.some((p) => String(res.getHeader(contentTypeHeader) ?? "").startsWith(p));
+  const push = (chunk: unknown) => {
+    if (buffer.length >= TOTAL_CAP || chunk === undefined || chunk === null) return;
+    buffer += String(chunk);
+  };
+  res.write = ((chunk: unknown, ...args: unknown[]) => {
+    push(chunk);
+    return write(chunk as never, ...(args as [never]));
+  }) as never;
+  res.end = ((chunk: unknown, ...args: unknown[]) => {
+    if (chunk !== undefined && typeof chunk !== "function") push(chunk);
+    return end(chunk as never, ...(args as [never]));
+  }) as never;
+  return {
+    read: () => {
+      if (binary()) return "<<binary " + String(res.getHeader(contentTypeHeader) ?? "unknown") + ">>";
+      const text = buffer.slice(0, TOTAL_CAP);
+      try {
+        return capValue(JSON.parse(text));
+      } catch {
+        return text.length >= TOTAL_CAP ? text + "…«truncated»" : text;
+      }
+    },
+  };
+}
+
+interface ResponseLike {
+  write: (chunk: unknown, ...args: unknown[]) => boolean;
+  end: (chunk?: unknown, ...args: unknown[]) => unknown;
+  getHeader: (name: string) => unknown;
+}
+
 export function recordX402Data(entry: Record<string, unknown>): void {
   try {
     appendFileSync(dataFile, JSON.stringify({ ts: new Date().toISOString(), ...entry }) + "\n", { mode: 0o600 });

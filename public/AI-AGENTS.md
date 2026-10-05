@@ -106,8 +106,8 @@ An alternative to per-request x402: buy a token-budget key once, then call with 
 
 - **Buy**: `POST {subdomain-origin}/prepaid/codes` or `/prepaid/codes/auto` (~$0.0095 x402 on sol/base/polygon/arc). The 201 response already contains a ready-to-copy `usage.example` block.
 - **Use**: send the issued `oms_buy_…` code as `Authorization: Bearer oms_buy_…` to `https://mapleai.shop/v1/chat/completions` (OpenAI-compatible). The response of `GET /v1/models` (same Bearer) lists only the combos this key is allowed to call.
-- **Key also works on the subdomains**: same Bearer accepted at `{sol,base,polygon,arc}.mapleai.shop/api/v1/chat/completions` (prepaid bypass); without a valid key you simply get the normal 402 paywall.
-- **Status**: `GET https://mapleai.shop/v1/prepaid/status` (Bearer) → key validity plus tokens total/used/reserved/remaining.
+- **Use on the subdomains (no x402)**: `POST {subdomain-origin}/prepaid/v1/chat/completions` with the same Bearer — any `/prepaid/v1/*` subpath forwards to the prepaid API. Without a valid key you get 401. (Legacy alias `/api/v1/chat/completions` also accepts the key and falls back to the normal 402 paywall when it is missing.)
+- **Status**: `GET {subdomain-origin}/prepaid/status` or `GET https://mapleai.shop/v1/prepaid/status` (Bearer, free) → key validity plus tokens total/used/reserved/remaining.
 - Budget is debited by token usage (reserve at request, settle at the real usage). Streams (`"stream": true`) work as usual SSE.
 
 ## Free Tier

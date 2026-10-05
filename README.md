@@ -157,7 +157,7 @@ curl https://mapleai.shop/v1/prepaid/status \
 - `admin/` — OmniRoute-based admin app: provider connections, combos,
   prepaid key issuance and wallet-only (SIWE) dashboard
 - `examples/` — runnable client examples
-- `packages/mapleai-mcp/` — local stdio MCP server (list models, paid chat)
+- `packages/mapleai-mcp/` — local stdio MCP server (free model catalog, embeddings and prepaid status; paid chat, Jev, agent execution and prepaid key packs with local x402 signing; bought keys spend in-server via prepaid_chat with no wallet)
 - `tools/` — payment and upstream test scripts
 - `deploy/` — systemd units and Apache vhosts used on the VDS
 

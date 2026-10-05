@@ -5,7 +5,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { decodePaymentRequiredHeader, decodePaymentResponseHeader, decodePaymentSignatureHeader } from '@x402/core/http';
 import { config } from './config.js';
 import { chainInfo } from './chain.js';
-import { capJson, recordX402Data } from './data-log.js';
+import { capJson, captureResponse, recordX402Data } from './data-log.js';
 
 export type PaymentEvent = {
   id: string;
@@ -104,15 +104,19 @@ export function paymentEventMiddleware(req: Request, res: Response, next: NextFu
   const nftRequest = req.method === 'GET' && /^\/api\/v1\/[^/]+\/nft\/getNFTMetadata$/.test(req.path);
   if (!nftRequest && (req.method !== 'POST' || !paidPaths.has(req.path))) return next();
   const id = randomUUID();
+  // Response capture installed up front: JSON and SSE text are preserved with a
+  // hard cap; binary media (wav/png) is replaced by a marker.
+  const captured = captureResponse(res as unknown as Parameters<typeof captureResponse>[0]);
   res.once('finish', () => {
     const event = paymentEventForResponse(req, res, id);
     // Content log for every signed (paid) attempt, independent of the accounting
-    // event file: WHO paid (address), WHAT they requested (capped body), outcome.
+    // event file: WHO paid (address), WHAT they requested and WHAT we answered.
     const signature = req.get('payment-signature') ?? req.get('x-payment');
     if (signature) {
       recordX402Data({
         ...(event ?? { id, ts: new Date().toISOString(), route: req.path, model: (req.body as { model?: unknown })?.model, httpStatus: res.statusCode }),
         request: capJson((req as Request & { body?: unknown }).body),
+        response: captured.read(),
       });
     }
     if (!event) return;

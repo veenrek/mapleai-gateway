@@ -10,6 +10,9 @@ import { privateKeyToAccount } from 'viem/accounts';
 import type { Hex } from 'viem';
 import { z } from 'zod';
 import { pathToFileURL } from 'node:url';
+import { createRequire } from 'node:module';
+
+const pkg = createRequire(import.meta.url)('../package.json') as { version: string };
 
 export const networks = {
   base: { origin: 'https://base.mapleai.shop', id: 'eip155:8453', asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' },
@@ -19,13 +22,25 @@ export const networks = {
 } as const;
 export type Network = keyof typeof networks;
 
-const PREPAID_API_BASE = 'https://mapleai.shop/v1';
+/** Prepaid keys (oms_buy_...) are global: every network domain forwards /prepaid/*
+ *  to the same issuer (src/prepaid-bypass.ts in the gateway), so status and spending
+ *  run same-origin on the network the caller picked — no x402, no wallet. */
 
-export function limit(): bigint {
-  const raw = process.env.MCP_MAX_PAYMENT_USDC ?? '0.10';
-  if (!/^\d+(\.\d{1,6})?$/.test(raw)) throw new Error('Invalid MCP_MAX_PAYMENT_USDC');
+export interface SpendCap { max: bigint; envName: string; raw: string }
+function envCap(envName: string, fallback: string): SpendCap {
+  const raw = process.env[envName] ?? fallback;
+  if (!/^\d+(\.\d{1,6})?$/.test(raw)) throw new Error('Invalid ' + envName + ': expected a decimal USDC amount');
   const [whole, fraction = ''] = raw.split('.');
-  return BigInt(whole) * 1_000_000n + BigInt(fraction.padEnd(6, '0'));
+  return { max: BigInt(whole) * 1_000_000n + BigInt(fraction.padEnd(6, '0')), envName, raw };
+}
+/** Per-call cap for metered calls (chat, Jev, agent execution). */
+export function limit(): SpendCap {
+  return envCap('MCP_MAX_PAYMENT_USDC', '0.10');
+}
+/** Per-purchase cap for prepaid key packs. The default covers the largest pack
+ *  (1M tokens of the most expensive model on sale, ~$2.80 + settlement fee). */
+export function prepaidLimit(): SpendCap {
+  return envCap('MCP_MAX_PREPAID_USDC', '3.00');
 }
 export function recipient(name: Network): string {
   const address = process.env['MCP_PAY_TO_' + name.toUpperCase()] ?? process.env.MCP_PAY_TO;
@@ -64,11 +79,12 @@ interface PaidRaw {
   payment: { network: string; amount_usdc: number; transaction: string | null };
 }
 
-export async function paidRequest(name: Network, path: string, body: string, timeoutMs = 120_000): Promise<PaidRaw> {
+interface PaidOptions { timeoutMs?: number; cap?: SpendCap }
+export async function paidRequest(name: Network, path: string, body: string, opts: PaidOptions = {}): Promise<PaidRaw> {
   const target = networks[name];
   const url = target.origin + path;
   const payTo = recipient(name);
-  const cap = limit();
+  const cap = opts.cap ?? limit();
   const headers = { 'content-type': 'application/json' };
   const first = await fetch(url, { method: 'POST', headers, body, signal: AbortSignal.timeout(30_000) });
   if (first.status !== 402) throw new Error('Expected x402 challenge, got HTTP ' + first.status);
@@ -80,17 +96,22 @@ export async function paidRequest(name: Network, path: string, body: string, tim
   if (requirement.scheme !== 'exact' || requirement.network !== target.id ||
     !sameAddress(requirement.asset ?? '', target.asset, name) ||
     !sameAddress(requirement.payTo ?? '', payTo, name) ||
-    typeof requirement.amount !== 'string' || !/^\d+$/.test(requirement.amount) ||
-    BigInt(requirement.amount) < 1n || BigInt(requirement.amount) > cap) {
-    throw new Error('Payment requirement failed network, asset, recipient or amount check');
+    typeof requirement.amount !== 'string' || !/^\d+$/.test(requirement.amount)) {
+    throw new Error('Payment requirement failed network, asset or recipient check');
   }
-  const client = await paymentClient(name, cap);
+  const amount = BigInt(requirement.amount);
+  if (amount < 1n) throw new Error('Payment requirement amount is zero');
+  if (amount > cap.max) {
+    throw new Error('Payment requirement ' + (Number(amount) / 1_000_000).toFixed(6) + ' USDC exceeds ' +
+      cap.envName + '=' + cap.raw + '. Raise ' + cap.envName + ' in the MCP client env and retry.');
+  }
+  const client = await paymentClient(name, cap.max);
   const payload = await client.createPaymentPayload(challenge);
   // PayAI currently rejects this optional field without an info block.
   delete payload.extensions?.quote;
   const paid = await fetch(url, {
     method: 'POST', headers: { ...headers, 'payment-signature': Buffer.from(JSON.stringify(payload)).toString('base64') },
-    body, signal: AbortSignal.timeout(timeoutMs),
+    body, signal: AbortSignal.timeout(opts.timeoutMs ?? 120_000),
   });
   const settlement = paid.headers.get('payment-response') ? header(paid.headers.get('payment-response'), 'PAYMENT-RESPONSE') : undefined;
   const raw = await paid.text();
@@ -101,8 +122,8 @@ export async function paidRequest(name: Network, path: string, body: string, tim
   } };
 }
 
-export async function paidCall(name: Network, path: string, body: string) {
-  const { raw, payment } = await paidRequest(name, path, body);
+export async function paidCall(name: Network, path: string, body: string, opts: PaidOptions = {}) {
+  const { raw, payment } = await paidRequest(name, path, body, opts);
   return { response: JSON.parse(raw) as unknown, payment };
 }
 export async function paidChat(name: Network, body: string) {
@@ -110,8 +131,12 @@ export async function paidChat(name: Network, body: string) {
 }
 
 export function createServer() {
-const server = new McpServer({ name: 'mapleai', version: '0.2.0' });
-const networkSchema = z.enum(['base', 'polygon', 'arc', 'solana']).default('polygon');
+const server = new McpServer({ name: 'mapleai', version: pkg.version });
+const envNetwork = process.env.MCP_NETWORK;
+if (envNetwork !== undefined && !(envNetwork in networks)) {
+  throw new Error('MCP_NETWORK must be one of: ' + Object.keys(networks).join(', '));
+}
+const networkSchema = z.enum(['base', 'polygon', 'arc', 'solana']).default((envNetwork as Network | undefined) ?? 'polygon');
 
 server.registerTool('list_models', {
   description: 'List MapleAI models and prices on a supported network. Free call.',
@@ -127,18 +152,20 @@ server.registerTool('list_models', {
 server.registerTool('embed_text', {
   description:
     'Free 2048-dim embeddings via NVIDIA nemotron-3-embed-1b. No payment. ' +
-    'Send one string or up to 4 strings; use input_type "query" for questions and "passage" for documents.',
+    'Send one string or up to 128 strings; use input_type "query" for questions and "passage" for documents. ' +
+    'encoding_format "float" (default) returns number arrays, "base64" returns compact base64 vectors.',
   inputSchema: {
-    input: z.union([z.string().min(1), z.array(z.string().min(1)).min(1).max(4)]),
+    input: z.union([z.string().min(1), z.array(z.string().min(1)).min(1).max(128)]),
     input_type: z.enum(['query', 'passage']).default('query'),
+    encoding_format: z.enum(['float', 'base64']).optional(),
     network: networkSchema,
   },
-}, async ({ input, input_type, network }) => {
+}, async ({ input, input_type, encoding_format, network }) => {
   try {
     const response = await fetch(networks[network].origin + '/v1/embeddings', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ input, input_type }),
+      body: JSON.stringify(encoding_format === undefined ? { input, input_type } : { input, input_type, encoding_format }),
       signal: AbortSignal.timeout(60_000),
     });
     if (!response.ok) throw new Error('Embeddings endpoint returned HTTP ' + response.status + ': ' + (await response.text()).slice(0, 300));
@@ -183,10 +210,11 @@ server.registerTool('jev_decide', {
 server.registerTool('agent_execute', {
   description:
     'Paid autonomous agent execution: give a natural-language task, a multi-step agent reasons and calls tools ' +
-    '(calculator, fetch_url, web_search via the keyless Exa index, data_analysis, code_exec — sandboxed ' +
-    'python/javascript/typescript, $0.002 per call, max 3 per task). ' +
-    'Engines: agents/oss-20b (cheap — short tasks ~$0.004) and agents/gpt-6-sol (premium reasoning ~$0.004 base + $0.004/step). ' +
-    'Charged at the max_steps ceiling plus allowed-tool fees. With stream=true the reply contains the live SSE step transcript; ' +
+    '(calculator, fetch_url, web_search via the keyless Exa index, data_analysis; on deployments with a sandbox ' +
+    'executor also code_exec — python/javascript/typescript, $0.002 per call, max 3 per task). ' +
+    'Engines: agents/oss-20b (cheap — $0.002 base + $0.0005/step) and agents/gpt-6-sol (premium — $0.004 base + $0.004/step). ' +
+    'Charged at the max_steps ceiling plus allowed-tool fees; the worst case (20 steps + 3 code_exec, ~$0.09) ' +
+    'still fits the default MCP_MAX_PAYMENT_USDC=0.10. With stream=true the reply contains the live SSE step transcript; ' +
     'the agent.execution object always includes the full step trace, sources, usage and charged_ceiling_usd.',
   inputSchema: {
     network: networkSchema,
@@ -199,10 +227,13 @@ server.registerTool('agent_execute', {
   },
 }, async ({ network, task, model, context, max_steps, tools, stream }) => {
   try {
+    if (task.length + (context?.length ?? 0) > 16_000) {
+      throw new Error('task + context must not exceed 16000 characters');
+    }
     const body: Record<string, unknown> = { model, task, max_steps, stream };
     if (context !== undefined) body.context = context;
     if (tools !== undefined) body.tools = tools;
-    const { raw, payment } = await paidRequest(network, '/v1/agents/execute', JSON.stringify(body), 540_000 + max_steps * 15_000);
+    const { raw, payment } = await paidRequest(network, '/v1/agents/execute', JSON.stringify(body), { timeoutMs: 540_000 + max_steps * 15_000 });
     if (!stream) return { content: [{ type: 'text', text: JSON.stringify({ execution: JSON.parse(raw), payment }) }] };
     // SSE: rebuild the transcript from open/step events and the final done payload.
     const transcript: string[] = [];
@@ -231,20 +262,26 @@ server.registerTool('agent_execute', {
 
 server.registerTool('buy_prepaid_tap', {
   description:
-    'Paid one-shot: buys a prepaid MapleAI API key (default 100000 tokens of openai/gpt-6-luna) with local x402 USDC. ' +
-    'An empty purchase costs about $0.008. The key works at https://mapleai.shop/v1 as an OpenAI-compatible Bearer credential. ' +
+    'Paid one-shot: buys a prepaid MapleAI API key with local x402 USDC. ' +
+    'With no arguments it buys the smallest pack of the cheapest model currently on sale (about $0.008). ' +
+    'Optional model (one of openai/gpt-5.6-sol, openai/gpt-5.6-terra, openai/gpt-6-luna, openai/gpt-6-sol, when on sale) ' +
+    'and tokens (100000..1000000 in steps of 100000) pick a bigger pack: price = tokens x model input rate per million ' +
+    '+ settlement fee, so 1M tokens of openai/gpt-6-sol is about $1.40 and the largest pack (1M of openai/gpt-5.6-sol) about $2.80. ' +
+    'Purchases are capped by MCP_MAX_PREPAID_USDC (default 3.00, covers the largest pack) — not by MCP_MAX_PAYMENT_USDC. ' +
+    'The key is an OpenAI-compatible Bearer credential at https://mapleai.shop/v1 — spend it there or with ' +
+    'the prepaid_chat tool right here; the network gateways also accept it same-origin under /prepaid/v1/*. ' +
     'Store the returned code — it is the only credential.',
   inputSchema: {
     network: networkSchema,
     model: z.string().optional(),
-    tokens: z.number().int().min(100_000).max(1_000_000).optional(),
+    tokens: z.number().int().min(100_000).max(1_000_000).multipleOf(100_000).optional(),
   },
 }, async ({ network, model, tokens }) => {
   try {
     const body: Record<string, unknown> = {};
     if (model !== undefined) body.model = model;
     if (tokens !== undefined) body.tokens = tokens;
-    const result = await paidCall(network, '/prepaid/codes/auto', JSON.stringify(body));
+    const result = await paidCall(network, '/prepaid/codes/auto', JSON.stringify(body), { cap: prepaidLimit() });
     return { content: [{ type: 'text', text: JSON.stringify(result) }] };
   } catch (error) { return { isError: true, content: [{ type: 'text', text: String(error) }] }; }
 });
@@ -252,18 +289,50 @@ server.registerTool('buy_prepaid_tap', {
 server.registerTool('prepaid_status', {
   description:
     'Free: check a prepaid MapleAI key (valid flag, reason, tokens total/used/reserved/remaining). ' +
-    'Send the oms_buy_ key bought via buy_prepaid_tap or the website.',
+    'Send the oms_buy_ key bought via buy_prepaid_tap or the website. Keys are global — the check runs ' +
+    'same-origin on the selected network (and identically at https://mapleai.shop/v1/prepaid/status).',
   inputSchema: {
     code: z.string().min(10),
+    network: networkSchema,
   },
-}, async ({ code }) => {
+}, async ({ code, network }) => {
   try {
-    const response = await fetch(PREPAID_API_BASE + '/prepaid/status', {
+    const response = await fetch(networks[network].origin + '/prepaid/status', {
       headers: { authorization: 'Bearer ' + code },
       signal: AbortSignal.timeout(15_000),
     });
     const text = await response.text();
     if (response.status !== 200) throw new Error('Status endpoint returned HTTP ' + response.status + ': ' + text.slice(0, 200));
+    return { content: [{ type: 'text', text }] };
+  } catch (error) { return { isError: true, content: [{ type: 'text', text: String(error) }] }; }
+});
+
+server.registerTool('prepaid_chat', {
+  description:
+    'Chat completions paid from a prepaid key instead of x402: no wallet, no per-call payment — token spend is ' +
+    'bounded by the key budget. Send the oms_buy_ code from buy_prepaid_tap (or the website) plus model and messages. ' +
+    'The key is bound to one model; a wrong model is answered 403 with the key\'s allowedModels. ' +
+    'Runs same-origin on the selected network at /prepaid/v1/chat/completions ' +
+    '(and identically at https://mapleai.shop/v1/chat/completions).',
+  inputSchema: {
+    code: z.string().min(10),
+    model: z.string().min(1),
+    messages: z.array(z.object({ role: z.enum(['system', 'user', 'assistant']), content: z.string() })).min(1).max(64),
+    max_tokens: z.number().int().min(1).max(16384).optional(),
+    network: networkSchema,
+  },
+}, async ({ code, model, messages, max_tokens, network }) => {
+  try {
+    const body: Record<string, unknown> = { model, messages };
+    if (max_tokens !== undefined) body.max_tokens = max_tokens;
+    const response = await fetch(networks[network].origin + '/prepaid/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer ' + code },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(120_000),
+    });
+    const text = await response.text();
+    if (!response.ok) throw new Error('Prepaid chat returned HTTP ' + response.status + ': ' + text.slice(0, 500));
     return { content: [{ type: 'text', text }] };
   } catch (error) { return { isError: true, content: [{ type: 'text', text: String(error) }] }; }
 });

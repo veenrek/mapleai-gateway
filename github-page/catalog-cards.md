@@ -94,8 +94,9 @@
 - **Price**: $0.007–$2.80 per pack (0.1M–1M tokens, по модели) + $0.001 fee
 - **Description**: Buy a prepaid OpenAI-compatible API key for one GPT model
   with a token budget (100k–1M in 100k steps, priced at the input rate).
-  The key works at https://mapleai.shop/v1; usage/status check is free at
-  https://mapleai.shop/v1/prepaid/status.
+  Spend the key (Bearer, no x402) at POST {sol,base,polygon,arc}.mapleai.shop/prepaid/v1/chat/completions
+  или на apex https://mapleai.shop/v1; usage/status check is free at
+  GET {subdomain}/prepaid/status или https://mapleai.shop/v1/prepaid/status.
 - **Try it (agent tap)**:
   ```bash
   curl -X POST https://sol.mapleai.shop/prepaid/codes/auto -H 'content-type: application/json' -d '{}'
@@ -103,15 +104,14 @@
 
 ## 7. General listing (одна карточка на сервис)
 
-- **Name**: MapleAI — GPT and Image API with x402 Pay-Per-Request
+- **Name**: MapleAI — GPT, Agents, Images, Audio, X Intelligence API with x402 Pay-Per-Request
 - **URL**: https://sol.mapleai.shop (mirrors: base/polygon/arc.mapleai.shop)
-- **Tags**: x402, usdc, solana, base, polygon, arc, llm, image-api, openai-compatible
-- **Price**: $0.001–$17.50 per request/pack
-- **Description**: Pay-per-request AI API: 4 GPT chat models from $0.07/1M,
-  image generation/editing from $0.02, Jev structured decisions, free
-  embeddings and prepaid token packs. Pay in USDC over x402 on Solana, Base,
-  Polygon or Arc. No accounts — your wallet is your identity. Machine-readable
-  discovery: service-endpoints.json, OpenAPI, llms.txt, AI-AGENTS.md.
+- **Tags**: x402, usdc, solana, base, polygon, arc, llm, agents, mcp, audio-api, image-api, embeddings, search, openai-compatible, prepaid
+- **Price**: free tier, $0.001–$17.50 per request/pack
+- **Description**: Pay-per-request AI API: GPT-6 combos, autonomous agent execution with tools and web search, image generation/editing from $0.02,
+  audio TTS ($0.015) and STT ($0.006), embeddings with a free tier, Jev structured decisions, X intelligence (search/digest/sentiment/factcheck), and prepaid token packs.
+  Pay in USDC over x402 on Solana, Base, Polygon or Arc. No accounts — your wallet is your identity. Machine-readable
+  discovery: service-endpoints.json, OpenAPI, llms.txt, AI-AGENTS.md. MCP server for agents: npx mapleai-mcp.
 
 ---
 

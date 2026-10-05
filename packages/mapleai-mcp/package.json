@@ -1,7 +1,7 @@
 {
   "name": "mapleai-mcp",
   "version": "0.3.0",
-  "description": "Local MCP tools for MapleAI GPT, images, embeddings and prepaid keys with x402 USDC payments",
+  "description": "Local MCP tools for MapleAI GPT chat, embeddings, agent execution and prepaid keys with x402 USDC payments",
   "type": "module",
   "bin": {
     "mapleai-mcp": "dist/server.js",
@@ -44,7 +44,6 @@
     "gpt",
     "openai-compatible",
     "embeddings",
-    "image-generation",
     "solana",
     "base",
     "polygon",
@@ -52,6 +51,11 @@
     "ai-agents"
   ],
   "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/veenrek/mapleai-gateway.git",
+    "directory": "packages/mapleai-mcp"
+  },
   "author": "MapleAI <contact@mapleai.shop>",
   "homepage": "https://sol.mapleai.shop"
 }

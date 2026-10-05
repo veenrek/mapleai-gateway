@@ -155,7 +155,7 @@ Provider meta (shared)
   "capabilityId": "mapleai-prepaid-key",
   "category": "onboarding",
   "provider": "MapleAI",
-  "capabilityDescription": "One x402 payment mints an oms_buy_... bearer key for https://mapleai.shop/v1 (our prepaid OpenAI gateway). Empty body buys the cheapest 100k-token pack currently on sale. Good for repeated calls: pay once per pack instead of per request. Free key status: GET https://mapleai.shop/v1/prepaid/status.",
+  "capabilityDescription": "One x402 payment mints an oms_buy_... bearer key for https://mapleai.shop/v1 (our prepaid OpenAI gateway). Empty body buys the cheapest 100k-token pack currently on sale. Good for repeated calls: pay once per pack instead of per request. The key also spends directly on the purchase gateway with no x402: POST {origin}/prepaid/v1/chat/completions (Bearer), and free key status: GET {origin}/prepaid/status (apex equivalent: GET https://mapleai.shop/v1/prepaid/status).",
   "endpoint": "https://base.mapleai.shop/prepaid/codes/auto",
   "providerPriceAtomic": "8000 (cheapest pack) up to 141000",
   "contract": {

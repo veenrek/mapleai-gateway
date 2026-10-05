@@ -130,7 +130,7 @@
       </section>
       <section id="mcp">
         <h2>MCP for agent clients</h2>
-        <p>Use the local stdio server with Node.js 20+. It exposes <code>list_models</code> and <code>chat_completion</code>. The server signs the x402 challenge and retries the API request; the agent client only needs standard MCP tool support.</p>
+        <p>Use the local stdio server with Node.js 20+. It exposes eight tools — free <code>list_models</code>, <code>embed_text</code>, <code>prepaid_status</code>, paid <code>chat_completion</code>, <code>jev_decide</code>, <code>agent_execute</code>, <code>buy_prepaid_tap</code>, and <code>prepaid_chat</code> which spends a prepaid key with no wallet. The server signs the x402 challenge and retries the API request; the agent client only needs standard MCP tool support.</p>
         <div class="snippet"><div class="snippet-title">Check a quote without paying</div><pre><code>npx -y -p mapleai-mcp mapleai-quickstart --network polygon</code></pre></div>
         <div class="snippet"><div class="snippet-title">Client MCP configuration</div><pre><code>{
   "mcpServers": {
@@ -140,12 +140,13 @@
       "env": {
         "EVM_PRIVATE_KEY": "0x...",
         "MCP_PAY_TO_POLYGON": "0x63db6eaf635a31bbc6714fe37bdc85243864f611",
-        "MCP_MAX_PAYMENT_USDC": "0.10"
+        "MCP_MAX_PAYMENT_USDC": "0.10",
+        "MCP_MAX_PREPAID_USDC": "3.00"
       }
     }
   }
 }</code></pre></div>
-        <p class="note">After checking the quote, use <code>mapleai-quickstart --pay</code> with a funded local wallet to test settlement. For Base and Arc, set <code>MCP_PAY_TO_BASE</code> or <code>MCP_PAY_TO_ARC</code> to the verified recipient. For Solana use <code>SVM_PRIVATE_KEY</code> and <code>MCP_PAY_TO_SOLANA=9DbpH2Mf9D26ak4bASsv6KA4Ra4V571oLpiVdZjAjcU8</code>. The default network is Polygon. Keep the wallet key in your local MCP client configuration.</p>
+        <p class="note">After checking the quote, use <code>mapleai-quickstart --pay</code> with a funded local wallet to test settlement. For Base and Arc, set <code>MCP_PAY_TO_BASE</code> or <code>MCP_PAY_TO_ARC</code> to the verified recipient. For Solana use <code>SVM_PRIVATE_KEY</code> and <code>MCP_PAY_TO_SOLANA=9DbpH2Mf9D26ak4bASsv6KA4Ra4V571oLpiVdZjAjcU8</code>. The default network is Polygon; set <code>MCP_NETWORK</code> to change it. Metered calls are capped by <code>MCP_MAX_PAYMENT_USDC</code>, prepaid key packs by <code>MCP_MAX_PREPAID_USDC</code>. Keep the wallet key in your local MCP client configuration.</p>
       </section>
       <section id="javascript">
         <h2>JavaScript</h2>

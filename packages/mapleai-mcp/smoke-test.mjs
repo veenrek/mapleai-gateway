@@ -7,8 +7,8 @@ await client.connect(transport);
 
 const tools = (await client.listTools()).tools.map((t) => t.name);
 console.log('tools:', tools.join(', '));
-if (tools.length !== 6) throw new Error('expected 6 tools, got ' + tools.length);
-for (const expected of ['list_models', 'embed_text', 'prepaid_status', 'chat_completion', 'jev_decide', 'buy_prepaid_tap']) {
+if (tools.length !== 8) throw new Error('expected 8 tools, got ' + tools.length);
+for (const expected of ['list_models', 'embed_text', 'prepaid_status', 'chat_completion', 'jev_decide', 'agent_execute', 'buy_prepaid_tap', 'prepaid_chat']) {
   if (!tools.includes(expected)) throw new Error('missing tool ' + expected);
 }
 
