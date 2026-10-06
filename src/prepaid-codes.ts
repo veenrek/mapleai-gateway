@@ -9,6 +9,16 @@ export const prepaidCodeModels = [
   "openai/gpt-5.6-terra",
   "openai/gpt-6-luna",
   "openai/gpt-6-sol",
+  "anthropic/claude-haiku-4-5",
+  "anthropic/claude-sonnet-4-5",
+  "anthropic/claude-sonnet-4-6",
+  "anthropic/claude-sonnet-5",
+  "anthropic/claude-sonnet-5-5",
+  "anthropic/claude-opus-4-6",
+  "anthropic/claude-opus-4-7",
+  "anthropic/claude-opus-4-8",
+  "anthropic/claude-opus-5",
+  "anthropic/claude-opus-5-5",
 ] as const;
 
 /** Sellable right now: full prepaid list minus models pulled by DISABLED_MODELS. */
@@ -127,7 +137,7 @@ export function validatePrepaidCodePurchase(
       error: {
         message: prepaidCodeModels.some((m) => m === body.model)
           ? `${body.model} prepaid packs are paused while the upstream is unavailable. Pick another model.`
-          : "model must be one of the supported GPT models.",
+          : "model must be one of the supported GPT or Claude models.",
         type: "invalid_request",
         param: "model",
         code: "invalid_model",

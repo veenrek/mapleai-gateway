@@ -595,7 +595,7 @@ const PAID_ROUTES = {
     agentsDiscovery, (context) => quoteAgentsExecute(requestBody(context) as Parameters<typeof quoteAgentsExecute>[0]), false, true, ["AI", "agents", "automation", "tools"]) } : {}),
   ...(prepaidCodesEnabled ? {
     "POST /prepaid/codes": paidRoute(
-      "Buy a prepaid API code for one GPT model and a token budget",
+      "Buy a prepaid API code for one GPT or Claude model and a token budget",
       declareDiscoveryExtension({
         input: prepaidCodeExample,
         inputSchema: prepaidCodeInputSchema,
@@ -1641,7 +1641,7 @@ app.get("/.well-known/x402", (req: Request, res: Response) => {
       ...(prepaidCodesEnabled ? [{
         method: "POST",
         path: "/prepaid/codes",
-        description: "Buy a prepaid API code for one GPT model and a token budget in 100000-token steps (100000-1000000)",
+        description: "Buy a prepaid API code for one GPT or Claude model and a token budget in 100000-token steps (100000-1000000)",
         price: prepaidPriceDisplay,
         tags: ["prepaid", "credits", "key"],
         pricedBy: "input rate * tokens + network settlement fee",
@@ -1796,7 +1796,7 @@ app.get("/.well-known/agent-card.json", (req: Request, res: Response) => {
       skill(
         "buy-prepaid-key",
         "Buy a prepaid API key",
-        `Issues a prepaid OpenAI-compatible bearer key for one GPT model (100000-1000000 token budget). Spend it with no x402 at ${origin}/prepaid/v1/chat/completions (Bearer).`,
+        `Issues a prepaid bearer key for one GPT or Claude model (100000-1000000 token budget). Spend it with no x402 at ${origin}/prepaid/v1/chat/completions (Bearer).`,
         ["prepaid", "budget"],
         `POST ${origin}/prepaid/codes/auto {}`,
       ),
@@ -2085,7 +2085,7 @@ app.get("/service-endpoints.json", (req: Request, res: Response) => {
       method: "POST",
       path: "/prepaid/codes",
       access: "x402",
-      description: "Buy a prepaid API key for one GPT model; budget 100000-1000000 tokens in 100000 steps",
+      description: "Buy a prepaid API key for one GPT or Claude model; budget 100000-1000000 tokens in 100000 steps",
       pricing: { kind: "pack", models: prepaidModelOffers(), overheadUsd: config.minChargeUsd },
       example: prepaidCodeExample,
       outputExample: prepaidCodeOutputExample,
@@ -2645,7 +2645,8 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
           post: {
             summary: "Chat completion with a prepaid key (no x402)",
             operationId: "prepaidChatCompletion",
-            security: [{ prepaidBearer: [] }],
+            // Not an x402-paid route: prepaid Bearer only, excluded from x402 probing.
+            security: [],
             description:
               "Spend a prepaid buyer key: same OpenAI-compatible body as /v1/chat/completions, " +
               "authorized with Authorization: Bearer oms_buy_... instead of an x402 payment. " +
@@ -2665,7 +2666,8 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
           get: {
             summary: "Prepaid key usage and status (free)",
             operationId: "prepaidKeyStatus",
-            security: [{ prepaidBearer: [] }],
+            // Free status check for the key holder; excluded from x402 probing.
+            security: [],
             description:
               "Self-service status for a prepaid buyer key. The key itself is the Bearer credential. " +
               "Returns valid, reason and tokens total/used/reserved/remaining; exhausted or disabled " +
@@ -3139,7 +3141,7 @@ app.get("/llms.txt", (req: Request, res: Response) => {
       ...(prepaidCodesEnabled ? [
         "",
         "POST " + origin + "/prepaid/codes",
-        "  Buy a prepaid API key for one GPT model (paid). Budget in 100000-token steps",
+        "  Buy a prepaid API key for one GPT or Claude model (paid). Budget in 100000-token steps",
         "  from 100000 to 1000000, priced at the model input rate plus settlement fee.",
         "  The key works at https://mapleai.shop/v1 (OpenAI-compatible).",
         "POST " + origin + "/prepaid/v1/chat/completions",
