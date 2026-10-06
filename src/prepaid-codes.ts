@@ -3,6 +3,7 @@ import type { NextFunction, Request, Response } from "express";
 import { config } from "./config.js";
 import { paymentOverheadUsd } from "./gas.js";
 import { isModelEnabled, isTokenPriced, pricingForModel } from "./models.js";
+import { jevModel, jevPricePerMillion } from "./jev.js";
 
 export const prepaidCodeModels = [
   "openai/gpt-5.6-sol",
@@ -19,10 +20,13 @@ export const prepaidCodeModels = [
   "anthropic/claude-opus-4-8",
   "anthropic/claude-opus-5",
   "anthropic/claude-opus-5-5",
+  jevModel,
 ] as const;
 
-/** Sellable right now: full prepaid list minus models pulled by DISABLED_MODELS. */
-export const sellablePrepaidModels = prepaidCodeModels.filter((m) => isModelEnabled(m));
+/** Sellable right now: full prepaid list minus models pulled by DISABLED_MODELS; Jev only when priced. */
+export const sellablePrepaidModels = prepaidCodeModels.filter(
+  (m) => isModelEnabled(m) && (m !== jevModel || jevPricePerMillion !== undefined)
+);
 
 export const prepaidCodesEnabled = Boolean(config.prepaidIssuerToken);
 
@@ -95,11 +99,17 @@ export interface PrepaidModelOffer {
   packPricesUsd: { tokens: number; usd: number }[];
 }
 
+/** Pack input rate ($/1M): MODEL_PRICES for token-priced combos, JEV_INPUT_PRICE_PER_MILLION for Jev. */
+function packInputRate(id: string): number {
+  if (id === jevModel && jevPricePerMillion !== undefined) return jevPricePerMillion;
+  const pricing = pricingForModel(id);
+  return pricing && isTokenPriced(pricing) ? pricing.input : 0;
+}
+
 /** Sellable models with their pack prices, derived from the live price table. */
 export function prepaidModelOffers(): PrepaidModelOffer[] {
   return sellablePrepaidModels.map((id) => {
-    const pricing = pricingForModel(id);
-    const input = pricing && isTokenPriced(pricing) ? pricing.input : 0;
+    const input = packInputRate(id);
     return {
       model: id,
       inputUsdPerMillion: input,
@@ -137,7 +147,7 @@ export function validatePrepaidCodePurchase(
       error: {
         message: prepaidCodeModels.some((m) => m === body.model)
           ? `${body.model} prepaid packs are paused while the upstream is unavailable. Pick another model.`
-          : "model must be one of the supported GPT or Claude models.",
+          : "model must be one of the supported GPT, Claude or Jev models.",
         type: "invalid_request",
         param: "model",
         code: "invalid_model",
@@ -175,23 +185,18 @@ export function validatePrepaidCodePurchase(
 }
 
 export async function quotePrepaidCode(body: { model: string; tokens: number }): Promise<string> {
-  const pricing = pricingForModel(body?.model);
   const tokens = body?.tokens;
-  if (
-    !pricing ||
-    !isTokenPriced(pricing) ||
-    !Number.isSafeInteger(tokens) ||
-    tokens < 100_000 ||
-    tokens > 1_000_000 ||
-    tokens % 100_000 !== 0
-  ) {
+  const validTokens =
+    Number.isSafeInteger(tokens) && tokens >= 100_000 && tokens <= 1_000_000 && tokens % 100_000 === 0;
+  const inputRate = body?.model ? packInputRate(body.model) : 0;
+  if (!validTokens || inputRate <= 0) {
     // Invalid purchases still get a minimal challenge; validation after the
     // paywall rejects them with 400 and the settlement is canceled.
     return `$${config.minChargeUsd.toFixed(6)}`;
   }
   const overhead = await paymentOverheadUsd();
   // Prepaid packs are sold at the model's input rate with no markup.
-  const rawUsd = (tokens * pricing.input) / 1_000_000 + overhead;
+  const rawUsd = (tokens * inputRate) / 1_000_000 + overhead;
   return `$${Math.max(config.minChargeUsd, rawUsd).toFixed(6)}`;
 }
 
