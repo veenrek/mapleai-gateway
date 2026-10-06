@@ -1664,6 +1664,13 @@ app.get("/.well-known/x402", (req: Request, res: Response) => {
         tags: ["prepaid", "chat", "key"],
         exampleBody: { model: prepaidCodeExample.model, messages: [{ role: "user", content: "Hello" }] },
       }, {
+        method: "POST",
+        path: "/prepaid/v1/jev",
+        description: "Spend a prepaid key on Jev structured decisions (Bearer oms_buy_); debits input tokens only, output is free",
+        price: "$0.00 (debits the key input-token budget)",
+        tags: ["prepaid", "jev", "decisions", "key"],
+        exampleBody: { model: "jev-latest", state: "The invoice was charged twice.", questions: { urgent: { type: "noul", instructions: "Is it time-sensitive?" } } },
+      }, {
         method: "GET",
         path: "/prepaid/status",
         description: "Prepaid key usage and status: validity plus tokens total/used/reserved/remaining (Bearer oms_buy_)",
@@ -2124,6 +2131,17 @@ app.get("/service-endpoints.json", (req: Request, res: Response) => {
       auth: "Authorization: Bearer oms_buy_...",
       example: { model: prepaidCodeExample.model, messages: [{ role: "user", content: "Hello" }] },
     });
+    if (jevEnabled) {
+      endpoints.push({
+        method: "POST",
+        path: "/prepaid/v1/jev",
+        access: "prepaid_bearer",
+        description: "Same-origin prepaid Jev structured decisions: debits input tokens only, output is free",
+        pricing: { kind: "prepaid_budget" },
+        auth: "Authorization: Bearer oms_buy_...",
+        example: { model: "jev-latest", state: "The invoice was charged twice.", questions: { urgent: { type: "noul", instructions: "Is it time-sensitive?" } } },
+      });
+    }
     endpoints.push({
       method: "GET",
       path: "/prepaid/status",
@@ -2662,6 +2680,31 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
             },
           },
         },
+        ...(jevEnabled ? {
+          "/prepaid/v1/jev": {
+            post: {
+              summary: "Jev structured decisions with a prepaid key (no x402)",
+              operationId: "prepaidJevDecision",
+              // Not an x402-paid route: prepaid Bearer only, excluded from x402 probing.
+              security: [],
+              description:
+                "Spend a prepaid buyer key on Jev structured decisions: same body as /jev " +
+                "(model jev-latest with state and named questions). Debits INPUT tokens only — " +
+                "Jev output is free. Failed upstream calls do not touch the budget.",
+              "x-worked-example": workedExample("POST", "/prepaid/v1/jev", { model: "jev-latest", state: "The invoice was charged twice.", questions: { urgent: { type: "noul", instructions: "Is it time-sensitive?" } } }, false),
+              requestBody: {
+                required: true,
+                content: { "application/json": { schema: { type: "object", required: ["model", "state", "questions"], properties: { model: { type: "string", enum: ["jev-latest"] }, state: { type: "string" }, questions: { type: "object" } } } } },
+              },
+              responses: {
+                "200": { description: "Typed judgments with per-question answers and usage" },
+                "401": { description: "Missing, invalid or exhausted prepaid key" },
+                "403": { description: "Model not allowed for this key" },
+                "502": { description: "Jev upstream unavailable" },
+              },
+            },
+          },
+        } : {}),
         "/prepaid/status": {
           get: {
             summary: "Prepaid key usage and status (free)",
@@ -3147,6 +3190,11 @@ app.get("/llms.txt", (req: Request, res: Response) => {
         "POST " + origin + "/prepaid/v1/chat/completions",
         "  Spend a prepaid key on this gateway (Bearer oms_buy_, no x402); usage",
         "  depletes the token budget. Any /prepaid/v1/* subpath forwards the same way.",
+        ...(jevEnabled ? [
+          "POST " + origin + "/prepaid/v1/jev",
+          "  Prepaid Jev structured decisions (Bearer oms_buy_): debits input tokens",
+          "  only, output is free.",
+        ] : []),
         "GET " + origin + "/prepaid/status",
         "  Check prepaid key usage and status here (free), same as",
         "  GET https://mapleai.shop/v1/prepaid/status. Send the prepaid key as the",

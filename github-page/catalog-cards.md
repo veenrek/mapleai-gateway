@@ -99,6 +99,7 @@
   Spend the key (Bearer, no x402) at POST {sol,base,polygon,arc}.mapleai.shop/prepaid/v1/chat/completions
   или на apex https://mapleai.shop/v1; usage/status check is free at
   GET {subdomain}/prepaid/status или https://mapleai.shop/v1/prepaid/status.
+  Jev-пакеты тратятся через POST {subdomain}/prepaid/v1/jev — биллинг только за input-токены.
 - **Try it (agent tap)**:
   ```bash
   curl -X POST https://sol.mapleai.shop/prepaid/codes/auto -H 'content-type: application/json' -d '{}'
