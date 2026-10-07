@@ -38,3 +38,6 @@ nexo-vps-test.sh
 blockrun-models.json
 models-after-cooldown.json
 gemini-*.wav
+
+# marketing/landing snapshot kept locally, not published in the gateway repo
+github-page/

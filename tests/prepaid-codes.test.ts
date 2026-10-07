@@ -4,6 +4,7 @@ import type { NextFunction, Request, Response } from "express";
 
 const {
   prepaidCodeModels,
+  sellablePrepaidModels,
   prepaidModelOffers,
   prepaidStatusUrl,
   validatePrepaidCodePurchase,
@@ -40,7 +41,7 @@ interface ErrorBody {
 
 test("offers derive pack prices from the live input rates", () => {
   const offers = prepaidModelOffers();
-  assert.equal(offers.length, prepaidCodeModels.length);
+  assert.equal(offers.length, sellablePrepaidModels.length);
   for (const offer of offers) {
     assert.ok(offer.inputUsdPerMillion > 0, `${offer.model} needs a positive input rate`);
     assert.deepEqual(offer.packPricesUsd.map((p) => p.tokens), [100_000, 1_000_000]);
@@ -56,7 +57,7 @@ test("invalid model answers with availableModels and a recovery hint", () => {
   assert.equal(err?.code, "invalid_model");
   const details = err?.details ?? {};
   const available = details.availableModels as { model: string }[];
-  assert.deepEqual(available.map((m) => m.model), [...prepaidCodeModels]);
+  assert.deepEqual(available.map((m) => m.model), [...sellablePrepaidModels]);
   assert.ok(String(details.hint).includes(prepaidStatusUrl));
   assert.ok(!state.nextCalled);
 });

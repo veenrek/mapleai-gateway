@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { config } from "./config.js";
+import { upstreamModelId } from "./models.js";
 
 /** Marketplace prepaid buyer keys carry the oms_buy_ prefix; everything else stays on the x402 paywall. */
 const PREPAID_BEARER = /^Bearer\s+oms_buy_/i;
@@ -54,6 +55,17 @@ const HOP_BY_HOP = new Set(["connection", "keep-alive", "content-length", "trans
 export async function forwardPrepaidRequest(req: Request, res: Response, route: PrepaidRoute): Promise<boolean> {
   const target = config.comboUpstreamBaseUrl + route.suffix;
   const hasBody = req.method !== "GET" && req.method !== "HEAD";
+  // Buyers think in our catalog ids (openai/..., anthropic/...); the prepaid
+  // API addresses combos by their bare name (gpt-6-luna, claude-sonnet-5).
+  // Normalize the model id the same way the chat proxy does.
+  let outboundBody: unknown = req.body ?? {};
+  if (hasBody && outboundBody && typeof outboundBody === "object" && !Array.isArray(outboundBody)) {
+    const model = (outboundBody as { model?: unknown }).model;
+    if (typeof model === "string") {
+      const upstream = upstreamModelId(model);
+      if (upstream !== model) outboundBody = { ...(outboundBody as Record<string, unknown>), model: upstream };
+    }
+  }
   const upstream = await fetch(target, {
     method: req.method,
     headers: {
@@ -68,7 +80,7 @@ export async function forwardPrepaidRequest(req: Request, res: Response, route: 
       "x-forwarded-host": "mapleai.shop",
       "user-agent": req.get("user-agent") ?? "mapleai-prepaid-bypass/1.0",
     },
-    ...(hasBody ? { body: JSON.stringify(req.body ?? {}) } : {}),
+    ...(hasBody ? { body: JSON.stringify(outboundBody) } : {}),
   });
 
   if (upstream.status === 401 && route.paywallFallback) {
@@ -101,14 +113,49 @@ export async function forwardPrepaidRequest(req: Request, res: Response, route: 
   return true;
 }
 
+function requestOrigin(req: Request): string {
+  const host = req.get("host") ?? "mapleai.shop";
+  return `https://${host}`;
+}
+
+/**
+ * Helpful 401 for dedicated prepaid endpoints: besides telling that a key is
+ * missing, show the caller EXACTLY how to use one and how to buy it. Same
+ * shape as the usage block of a successful /prepaid/codes purchase.
+ */
+export function buildPrepaidRequiredBody(req: Request): Record<string, unknown> {
+  const origin = requestOrigin(req);
+  const body = (req as Request & { body?: Record<string, unknown> }).body ?? {};
+  const exampleBody = Object.keys(body).length > 0
+    ? body
+    : req.path.endsWith("/chat/completions")
+      ? { model: "openai/gpt-6-luna", messages: [{ role: "user", content: "Hello" }] }
+      : body;
+  return {
+    error: {
+      message: "A prepaid buyer key is required for this endpoint: send it as `Authorization: Bearer oms_buy_...`.",
+      type: "prepaid_key_required",
+    },
+    usage: {
+      authorization: "Bearer oms_buy_...",
+      endpoint: `${req.method} ${origin}${req.path}`,
+      example_curl:
+        `curl -s ${origin}${req.path} -H "Authorization: Bearer oms_buy_..." ` +
+        (Object.keys(exampleBody).length > 0 ? `-H "Content-Type: application/json" -d '${JSON.stringify(exampleBody)}'` : ""),
+      buy_key: `POST ${origin}/prepaid/codes/auto  (x402 USDC, returns a fresh oms_buy_ key)`,
+      status_check: `GET ${origin}/prepaid/status  (with the same Bearer; shows tokens total/used/remaining)`,
+    },
+  };
+}
+
 export function prepaidBypassMiddleware(req: Request, res: Response, next: NextFunction): void {
   const route = matchPrepaidRoute(req);
   if (!route) return next();
-  if (req.method === "POST" && !PREPAID_BEARER.test(req.get("authorization") ?? "")) {
+  if (!PREPAID_BEARER.test(req.get("authorization") ?? "")) {
+    // Mixed /api/v1 surface keeps its pay-per-request fallback; dedicated
+    // prepaid endpoints answer 401 themselves, with the usage example.
     if (route.paywallFallback) return next();
-    res.status(401).json({
-      error: { message: "A prepaid buyer key is required: Authorization: Bearer oms_buy_...", type: "prepaid_key_required" },
-    });
+    res.status(401).json(buildPrepaidRequiredBody(req));
     return;
   }
   forwardPrepaidRequest(req, res, route)
