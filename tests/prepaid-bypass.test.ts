@@ -1,7 +1,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-const { shouldBypassPrepaid } = await import("../src/prepaid-bypass.ts");
+const { shouldBypassPrepaid, buildPrepaidRequiredBody } = await import("../src/prepaid-bypass.ts");
+
+test("buildPrepaidRequiredBody tells the caller how to use a key", () => {
+  const body = buildPrepaidRequiredBody({
+    method: "POST",
+    path: "/prepaid/v1/chat/completions",
+    get(name: string) {
+      if (name === "host") return "base.mapleai.shop";
+      if (name.toLowerCase() === "authorization") return undefined;
+      return undefined;
+    },
+  } as never) as { error?: { type?: string }; usage?: { example_curl?: string; authorization?: string; endpoint?: string } };
+  assert.equal(body.error?.type, "prepaid_key_required");
+  assert.equal(body.usage?.authorization, "Bearer oms_buy_...");
+  assert.match(body.usage?.endpoint ?? "", /POST https:\/\/base\.mapleai\.shop\/prepaid\/v1\/chat\/completions/);
+  assert.match(body.usage?.example_curl ?? "", /oms_buy_\.\.\./);
+});
 
 function fakeReq(method: string, path: string, authorization?: string) {
   return {
