@@ -148,6 +148,7 @@
   }
 }</code></pre></div>
         <p class="note">After checking the quote, use <code>mapleai-quickstart --pay</code> with a funded local wallet to test settlement. For Base and Arc, set <code>MCP_PAY_TO_BASE</code> or <code>MCP_PAY_TO_ARC</code> to the verified recipient. For Solana use <code>SVM_PRIVATE_KEY</code> and <code>MCP_PAY_TO_SOLANA=9DbpH2Mf9D26ak4bASsv6KA4Ra4V571oLpiVdZjAjcU8</code>. The default network is Polygon; set <code>MCP_NETWORK</code> to change it. Metered calls are capped by <code>MCP_MAX_PAYMENT_USDC</code>, prepaid key packs by <code>MCP_MAX_PREPAID_USDC</code>. Keep the wallet key in your local MCP client configuration.</p>
+        <p class="note">Bootstrapping a paying agent? Fork <a href="https://github.com/veenrek/mapleai-agent-starter">mapleai-agent-starter</a> on GitHub: repo instructions for agent clients, MCP wiring, a full paid scenario script and a free CI smoke.</p>
       </section>
       <section id="javascript">
         <h2>JavaScript</h2>
@@ -184,6 +185,6 @@ console.log(await paid.json());</code></pre></div>
     </article>
   </div>
 </main>
-<footer><div class="wrap frow"><span>&copy; {{YEAR}} {{BRAND}}</span><a href="/v1/models">Models</a><a href="/.well-known/x402">.well-known/x402</a><a href="/openapi.json">OpenAPI</a><a href="/llms.txt">llms.txt</a><a href="/health">Health</a><a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a></div></footer>
+<footer><div class="wrap frow"><span>&copy; {{YEAR}} {{BRAND}}</span><a href="/v1/models">Models</a><a href="/.well-known/x402">.well-known/x402</a><a href="/openapi.json">OpenAPI</a><a href="/llms.txt">llms.txt</a><a href="/health">Health</a><a href="https://github.com/veenrek/mapleai-agent-starter">Agent starter</a><a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a></div></footer>
 </body>
 </html>
