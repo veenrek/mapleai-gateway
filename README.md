@@ -1,10 +1,11 @@
-# MapleAI — GPT and Image API with x402 Pay-Per-Request
+# MapleAI — GPT, Claude and Agent APIs with x402 Pay-Per-Request
 
-OpenAI-compatible GPT, image, embeddings and structured-decision APIs behind one
-endpoint. No accounts, no subscriptions, no API keys for the pay-per-request
-tier — an agent pays per call in USDC over the [x402](https://x402.org)
-protocol. Prepaid API keys are available for clients that prefer a token
-budget over per-request payments.
+OpenAI-compatible GPT and Anthropic-native Claude chat, multi-step agent
+execution, image, audio, X (Twitter) intel, embeddings and structured-decision
+APIs behind one endpoint. No accounts, no subscriptions, no API keys for the
+pay-per-request tier — an agent pays per call in USDC over the
+[x402](https://x402.org) protocol. Prepaid API keys are available for clients
+that prefer a token budget over per-request payments.
 
 ## Live endpoints
 
@@ -32,6 +33,37 @@ A request is quoted as counted input tokens × input rate + requested output
 tokens × output rate, plus the network settlement fee (about $0.001; the exact
 amount is always in the 402 challenge). Failed calls (HTTP ≥ 400) are
 cancelled, not settled.
+
+### Claude (per 1M tokens)
+
+Native Anthropic Messages API at `POST /v1/messages` (system prompt, content
+blocks, SSE events, required `max_tokens`; the system prompt is billed as
+input tokens). Also reachable via the OpenAI-compatible `/v1/chat/completions`.
+
+| Model | Input | Output |
+| --- | ---: | ---: |
+| `anthropic/claude-haiku-4-5` | $0.50 | $2.50 |
+| `anthropic/claude-sonnet-4-5`, `anthropic/claude-sonnet-4-6` | $1.50 | $7.50 |
+| `anthropic/claude-sonnet-5`, `anthropic/claude-sonnet-5-5` | $1.00 | $5.00 |
+| `anthropic/claude-opus-4-6`, `anthropic/claude-opus-4-7`, `anthropic/claude-opus-4-8`, `anthropic/claude-opus-5` | $2.50 | $12.50 |
+| `anthropic/claude-opus-5-5` | $2.00 | $10.00 |
+
+### Agent execution
+
+`POST /v1/agents/execute` — multi-step agent loop (reason → call tools →
+final answer), Cluster Protocol-compatible response. Optional SSE step
+streaming with `"stream": true` (`step` events as tools run, `done` with the
+final result). Built-in tools: deterministic `calculator`, `data_analysis`
+(statistics over up to 500 numbers), keyless `web_search` (Exa) and
+`fetch_url`. Per-step timeout returns partial results instead of a bare 502.
+
+| Engine | Base | Per step | Upstream model |
+| --- | ---: | ---: | --- |
+| `agents/oss-20b` | $0.002 | $0.0005 | gpt-oss-20b (cheap tier) |
+| `agents/gpt-6-sol` | $0.004 | $0.004 | gpt-6-sol (premium) |
+
+Charged as a ceiling — base + `max_steps` × per-step price (+ tool ceilings),
+like `max_tokens` for chat; up to 20 steps per task.
 
 ### Images (per image)
 
@@ -65,17 +97,33 @@ Responses carry `x-audio-upstream` and `x-fallback-used` headers — when the
 primary vendor fails the request fails over to a secondary one inside the
 same payment (for TTS the voice differs then).
 
+### X (Twitter) intel
+
+Live X search and analytics via Grok `x_search`:
+
+| Endpoint | What it does | Price formula |
+| --- | --- | --- |
+| `POST /v1/x/search` | summarized answer with post citations | $0.015 + $0.0015 × `max_results` (+$0.01 with `include_web`) |
+| `POST /v1/x/digest` | digest of specific handles over a look-back window | $0.02 + $0.005 × handles |
+| `POST /v1/x/sentiment` | sentiment verdict, score, distribution, drivers | $0.025 + $0.0015 × evidence posts + $0.005 × days |
+| `POST /v1/x/factcheck` | claim verdict with evidence for/against | $0.03 + $0.002 × sources |
+| `POST /v1/x/profile` | profile dossier: bio, followers, topics, flags | $0.02 + $0.015 × handles |
+| `POST /v1/x/media` | image/video understanding over post media | $0.02 + $0.002 × results |
+
 ### Jev structured decisions
 
 `POST /jev` — `jev-latest`, $0.06 per 1M input tokens, output free. SystemOne
 protocol: send `model`, `state` and named `questions` (`noul`, `choice` or
 `score` with `instructions`), read `answers` from the response.
 
-### Free embeddings
+### Free tier
 
 `POST /v1/embeddings` — free NVIDIA `nvidia/nemotron-3-embed-1b` (2048
 dimensions). Send `input` as a string or an array of up to 128 strings;
 `model` is optional and ignored.
+
+`POST /v1/free/chat/completions` — free `nvidia/gpt-oss-20b` chat,
+rate-limited per agent (10 requests / 10 min and 100 / day).
 
 ## Quickstart
 
@@ -117,7 +165,8 @@ and a free CI smoke for all four gateways.
 
 ## Prepaid API keys
 
-Buy a prepaid bearer key for one GPT model with a single x402 payment:
+Buy a prepaid bearer key for one GPT or Claude model, or a Jev input pack,
+with a single x402 payment:
 
 ```bash
 curl https://base.mapleai.shop/prepaid/codes \
@@ -134,9 +183,14 @@ model input rate plus the settlement fee:
 | `openai/gpt-5.6-terra` | $0.14 | $1.40 |
 | `openai/gpt-6-luna` | $0.007 | $0.07 |
 | `openai/gpt-6-sol` | $0.14 | $1.40 |
+| `anthropic/claude-haiku-4-5` | $0.05 | $0.50 |
+| `anthropic/claude-sonnet-5` | $0.10 | $1.00 |
+| `anthropic/claude-opus-5` | $0.25 | $2.50 |
+| `jev-latest` (input tokens only, output free) | $0.006 | $0.06 |
 
-The key works at `https://mapleai.shop/v1` (OpenAI-compatible). Check usage
-and status for free:
+GPT and Claude keys spend at `POST /prepaid/v1/chat/completions` (works on the
+subdomains and at the shared `https://mapleai.shop/v1`, OpenAI-compatible);
+Jev packs spend at `POST /prepaid/v1/jev`. Check usage and status for free:
 
 ```bash
 curl https://mapleai.shop/v1/prepaid/status \
