@@ -18,6 +18,7 @@ import { estimateOutputTokens, quotePrice, quoteBreakdown } from "./pricing.js";
 import { paymentOverheadUsd } from "./gas.js";
 import { actualCostUsd, extractPayer, parseUsage, parseUsageFromSse, recordUsage } from "./ledger.js";
 import { paymentEventMiddleware } from "./payment-events.js";
+import { paymentRequiredBodyMiddleware } from "./payment-required-body.js";
 import { prepaidBypassMiddleware } from "./prepaid-bypass.js";
 import { fetchUpstreamChat } from "./upstream.js";
 import { fetchImage, imageModels, imageRates, imagesEnabled, quoteImage, validateImage, type ImageKind, type ImageRequest } from "./images.js";
@@ -623,6 +624,7 @@ const PAID_ROUTES = {
   } : {}),
 };
 
+app.use(paymentRequiredBodyMiddleware({ embeddingsEnabled, freeGptOssEnabled }, originOf));
 app.use(paymentMiddleware(PAID_ROUTES, resourceServer));
 
 if (imagesEnabled) {
