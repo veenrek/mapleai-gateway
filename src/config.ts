@@ -49,6 +49,31 @@ export const config = {
 
   /** Address that receives USDC payments (Solana base58 or EVM 0x…, must match NETWORK) */
   payTo: required("PAY_TO"),
+
+  /**
+   * Extra networks advertised in every 402 challenge alongside NETWORK
+   * (comma-separated CAIP-2 ids, e.g. "eip155:137,solana:5eykt4Us...").
+   * Multi-network raises the fill rate for agents funded on other chains.
+   * Only valid with FACILITATOR_MODE=cdp — the CDP facilitator settles all of
+   * them; the local arc facilitator (http mode) is single-network and would
+   * reject foreign challenges.
+   */
+  extraNetworks: (process.env.EXTRA_NETWORKS ?? "")
+    .split(",")
+    .map((n) => n.trim())
+    .filter((n) => n.length > 0) as `${string}:${string}`[],
+  /** payTo for a Solana entry in EXTRA_NETWORKS (base58; EVM extras reuse PAY_TO). */
+  solanaPayTo: process.env.SOLANA_PAY_TO ?? "",
+
+  /**
+   * CIRCLE_GATEWAY=true adds Circle Gateway (nanopayments) as an extra
+   * settle path on EVM accepts: next to the plain exact EIP-3009 entry the
+   * 402 also offers a GatewayWalletBatched entry settled through Circle's
+   * public batching API. Buyer must hold a Gateway USDC balance; funds
+   * accrue off-chain to our sellerAddress until withdrawn. Requires
+   * FACILITATOR_MODE=cdp; Solana/arc-local settlements are untouched.
+   */
+  circleGateway: process.env.CIRCLE_GATEWAY === "true",
   /** Required on Robinhood Chain until an official USDC address is confirmed. */
   paymentAssetAddress: process.env.PAYMENT_ASSET_ADDRESS,
 

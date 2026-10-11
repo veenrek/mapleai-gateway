@@ -2,10 +2,19 @@ import express, { type Request, type Response } from "express";
 import { paymentMiddleware, x402ResourceServer } from "@x402/express";
 import { createCdpFacilitatorClient, CDP_FACILITATOR_URL } from "@coinbase/cdp-sdk/x402";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
+import { BatchFacilitatorClient, GatewayEvmScheme } from "@circle-fin/x402-batching/server";
 import { ExactSvmScheme } from "@x402/svm/exact/server";
 import { HTTPFacilitatorClient, type HTTPRequestContext } from "@x402/core/server";
 import { convertToTokenAmount } from "@x402/core/utils";
 import { bazaarResourceServerExtension, declareDiscoveryExtension } from "@x402/extensions/bazaar";
+import {
+  createSIWxResourceServerExtension,
+  createSIWxSettleHook,
+  declareSIWxExtension,
+  InMemorySIWxStorage,
+  parseSIWxHeader,
+} from "@x402/extensions/sign-in-with-x";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
@@ -127,8 +136,20 @@ const cdpSupportedNetworks = new Set([
 if (config.facilitatorMode === "cdp" && !cdpSupportedNetworks.has(config.network)) {
   throw new Error("CDP facilitator does not support configured network " + config.network);
 }
+if (config.circleGateway && config.facilitatorMode !== "cdp") {
+  throw new Error("CIRCLE_GATEWAY requires FACILITATOR_MODE=cdp (Gateway batching settles on EVM via Circle's API)");
+}
+// Circle Gateway (nanopayments): second facilitator client serving batched
+// accepts on EVM networks next to CDP's plain exact scheme. Buyer with a
+// Gateway balance settles gas-free off-chain; everyone else keeps paying
+// the plain EIP-3009 way. Sellers withdraw from the Gateway balance later.
+const batchClient = config.circleGateway ? new BatchFacilitatorClient() : null;
 const facilitator = config.facilitatorMode === "cdp"
-  ? createCdpFacilitatorClient()
+  ? (batchClient
+      // BatchFacilitatorClient's d.ts ships stricter PaymentPayload/ResourceInfo
+      // type shapes than @x402/core 2.27 declares; runtime wire format is the same.
+      ? [createCdpFacilitatorClient(), batchClient as unknown as HTTPFacilitatorClient]
+      : createCdpFacilitatorClient())
   : httpFacilitator;
 const evmScheme = new ExactEvmScheme();
 if (config.network === "eip155:5042") {
@@ -138,11 +159,53 @@ if (config.network === "eip155:5042") {
     extra: { name: "USDC", version: "2" },
   }));
 }
+/**
+ * EVM scheme per registered network. GatewayEvmScheme only carries the
+ * GatewayWalletBatched facilitator extras through — its money parsers drop
+ * USDC's EIP-712 name/version from plain accepts, which would break
+ * EIP-3009 signers. So: Gateway scheme only for batch-owned networks
+ * (eip155:5042), the stock Exact scheme for CDP-owned ones.
+ */
+const evmSchemeFor = (net: string) => (net === "eip155:5042" && config.circleGateway ? new GatewayEvmScheme() : evmScheme);
 const resourceServer = new x402ResourceServer(facilitator).register(
   config.network,
-  config.network.startsWith("solana:") ? new ExactSvmScheme() : evmScheme,
+  config.network.startsWith("solana:") ? new ExactSvmScheme() : evmSchemeFor(config.network),
 );
+if (config.extraNetworks.length > 0) {
+  // eip155:5042 (Arc) is settleable only through Circle Gateway batching
+  // (CDP and the local arc facilitator handle their own single network).
+  const batchSettleable = new Set(config.circleGateway ? ["eip155:5042"] : []);
+  const unsettleable = config.extraNetworks.filter(
+    (n) => !cdpSupportedNetworks.has(n) && !batchSettleable.has(n),
+  );
+  if (config.facilitatorMode !== "cdp" || unsettleable.length > 0) {
+    throw new Error(
+      "EXTRA_NETWORKS requires FACILITATOR_MODE=cdp and CDP/Gateway-settleable networks; unsettleable: " +
+        (unsettleable.length > 0 ? unsettleable.join(",") : "(http facilitator is single-network)"),
+    );
+  }
+  for (const net of config.extraNetworks) {
+    if (net === config.network) continue;
+    if (net.startsWith("solana:") && !config.solanaPayTo) {
+      throw new Error("EXTRA_NETWORKS includes " + net + " but SOLANA_PAY_TO is not set");
+    }
+    resourceServer.register(net, net.startsWith("solana:") ? new ExactSvmScheme() : evmSchemeFor(net));
+  }
+}
 resourceServer.registerExtension(bazaarResourceServerExtension);
+
+// Sign-In-With-X (CAIP-122): agents authenticate with wallet signatures
+// instead of issued API keys. Every 402 declares the extension; wallets
+// that settled a payment are remembered (settle hook) and can re-enter
+// paid content, and auth-only routes accept the signature alone.
+// In-memory storage: a restart forgets who's paid (they just re-sign+pay
+// once); the payment-events journal remains the durable record.
+const siwxStorage = new InMemorySIWxStorage();
+const siwxOrigin = config.publicBaseUrl ?? `http://localhost:${config.port}`;
+resourceServer.registerExtension(
+  createSIWxResourceServerExtension({ storage: siwxStorage, origin: siwxOrigin }),
+);
+resourceServer.onAfterSettle(createSIWxSettleHook({ storage: siwxStorage }));
 
 /** Parsed request body (express.json() runs first, and the paywall needs it to price). */
 function requestBody(context: HTTPRequestContext): Record<string, unknown> {
@@ -333,22 +396,48 @@ function bazaarCard(discovery: ReturnType<typeof declareDiscoveryExtension>, tag
   };
 }
 
+/**
+ * One accepts entry per configured network. The primary entry is NETWORK;
+ * EXTRA_NETWORKS entries share price/timeout and take their payTo from
+ * SOLANA_PAY_TO when they are Solana networks (EVM extras reuse PAY_TO).
+ * Solana entries carry paymentFlow "upfront" whenever `upfront` is set —
+ * Solana blockhashes outlive slow upstream calls (image generation takes
+ * 40-100s), so settlement after the handler fails with BlockhashNotFound.
+ */
+function paymentOptions(price: DynamicPrice, upfront: boolean) {
+  const solanaUpfront = (net: string) =>
+    upfront && net.startsWith("solana:") ? { extra: { paymentFlow: "upfront" } } : {};
+  const primary = {
+    scheme: "exact",
+    price,
+    network: config.network,
+    payTo: config.payTo,
+    maxTimeoutSeconds: 120,
+    ...solanaUpfront(config.network),
+  };
+  const extras = config.extraNetworks
+    .filter((net) => net !== config.network)
+    .map((net) => ({
+      scheme: "exact",
+      price,
+      network: net,
+      payTo: net.startsWith("solana:") ? config.solanaPayTo : config.payTo,
+      maxTimeoutSeconds: 120,
+      ...solanaUpfront(net),
+    }));
+  return extras.length > 0 ? [primary, ...extras] : primary;
+}
+
 /** Every paid route shares one pricing rule; only the discovery shape differs. */
 function paidRoute(description: string, discovery: ReturnType<typeof declareDiscoveryExtension>, price: DynamicPrice = quotedPrice, includeQuote = true, upfront = false, tags: string[] = [], mimeType = "application/json") {
   return {
-    accepts: {
-      scheme: "exact",
-      price,
-      network: config.network,
-      payTo: config.payTo,
-      maxTimeoutSeconds: 120,
-      // Solana blockhashes outlive slow upstream calls (image generation takes
-      // 40-100s), so settlement after the handler fails with BlockhashNotFound.
-      // Upfront settles right after verification, before the work starts.
-      ...(upfront && config.network.startsWith("solana:") ? { extra: { paymentFlow: "upfront" } } : {}),
-    },
+    accepts: paymentOptions(price, upfront),
     description,
     mimeType,
+    // Для pay-per-request инференса SIWX-skip-payment НЕ декларируем: дефолтная
+    // семантика библиотеки ("один settle -> hasPaid навсегда") превратила бы
+    // одну оплату в безлимитный доступ к маршруту. Wallet-auth применяем только
+    // на auth-only роутах, где доступ и так бесплатен (см. /v1/account/payments).
     extensions: { ...(includeQuote ? { quote: {} } : {}), ...bazaarCard(discovery, tags) },
   };
 }
@@ -622,10 +711,64 @@ const PAID_ROUTES = {
       ["AI", "prepaid", "credits"],
     ),
   } : {}),
+  // Auth-only (SIWX): no accepts — a valid wallet signature alone grants access.
+  "GET /v1/account/payments": {
+    accepts: [],
+    description:
+      "Wallet-authenticated (Sign-In-With-X, CAIP-122) account view: the latest settled payments of the signing wallet, " +
+      "so agents can audit their own spend without an API key. Sign the challenge in the 402 and retry with the SIGN-IN-WITH-X header.",
+    mimeType: "application/json",
+    extensions: {
+      ...declareSIWxExtension({
+        network: [config.network, ...config.extraNetworks],
+        statement: "Sign in to MapleAI to view your own settled payments.",
+        expirationSeconds: 300,
+      }),
+    },
+  },
 };
 
-app.use(paymentRequiredBodyMiddleware({ embeddingsEnabled, freeGptOssEnabled }, originOf));
+app.use(paymentRequiredBodyMiddleware({ embeddingsEnabled, freeGptOssEnabled }, originOf, process.env.MPP_SECRET ?? ""));
 app.use(paymentMiddleware(PAID_ROUTES, resourceServer));
+
+// SIWX auth-only account view. The middleware above already verified the
+// SIGN-IN-WITH-X signature; here we only decode it and serve the caller's
+// own settled rows from the payment-events journal.
+app.get("/v1/account/payments", (req: Request, res: Response) => {
+  const proof = parseSIWxHeader(req.get("sign-in-with-x") ?? "");
+  if (!proof?.address) {
+    res.status(400).json({ error: "missing or malformed SIGN-IN-WITH-X header" });
+    return;
+  }
+  const wallet = proof.address;
+  const limit = Math.min(Math.max(Number(req.query.limit ?? 10) || 10, 1), 50);
+  const isEvm = wallet.startsWith("0x");
+  const needle = isEvm ? wallet.toLowerCase() : wallet;
+  const file = process.env.PAYMENT_EVENTS_FILE ?? "./payment-events.jsonl";
+  const payments: Record<string, unknown>[] = [];
+  try {
+    const lines = readFileSync(file, "utf8").trim().split("\n");
+    for (let i = lines.length - 1; i >= 0 && payments.length < limit; i--) {
+      let event: Record<string, unknown>;
+      try {
+        event = JSON.parse(lines[i]);
+      } catch {
+        continue;
+      }
+      if (event.kind !== "settled") continue;
+      const payer = typeof event.payer === "string" ? (isEvm ? event.payer.toLowerCase() : event.payer) : "";
+      if (payer !== needle) continue;
+      payments.push({
+        ts: event.ts, route: event.route, model: event.model,
+        amountUsdc: event.amountUsdc, network: event.network,
+        transaction: event.transaction,
+      });
+    }
+  } catch {
+    // no journal yet -> empty history, not an error
+  }
+  res.json({ object: "account.payments", wallet, count: payments.length, payments });
+});
 
 if (imagesEnabled) {
   app.post("/api/v1/images/generations", validateImage("generation"));
@@ -2494,7 +2637,7 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
     },
   } } } });
 
-  res.json({
+  const doc = {
     openapi: "3.1.0",
     info: {
       title: config.serviceName,
@@ -2509,6 +2652,25 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
         url: origin,
       },
       license: { name: "Proprietary" },
+      "x-guidance":
+        "Agent guidance. What this is: pay-per-request LLM inference; every call is paid with " +
+        "USDC exactly once, no account, no API key. How to pay: POST any paid endpoint without " +
+        "credentials. You get HTTP 402 and a PAYMENT-REQUIRED header with accepts[] (scheme exact, " +
+        "asset USDC, payTo, amount in atomic units). Pick an entry on a network your wallet is " +
+        "funded on, sign the USDC transfer, retry the identical request with the signed payload in " +
+        "the PAYMENT-SIGNATURE header. The product and an on-chain receipt arrive in one response. " +
+        "Inputs: OpenAI-compatible JSON bodies; model id from GET /v1/models. Outputs: OpenAI-compatible " +
+        "JSON (chat/responses/messages), JSON with url/b64 (images), binary audio (TTS). When to call: " +
+        "/v1/chat/completions, /v1/responses or /v1/messages for text (Claude models cost 50% of list); " +
+        "/api/v1/images/generations and /image2image for images; /v1/audio/speech and " +
+        "/v1/audio/transcriptions for speech; /v1/web/search and /v1/x/* for live web/X data with " +
+        "citations; /jev for deterministic structured JSON decisions; /v1/agents/execute for " +
+        "multi-step tool runs. Free eval paths (no payment, no key): POST /v1/embeddings for " +
+        "embeddings (RAG, semantic search, clustering) and POST /v1/free/chat/completions " +
+        "(rate-limited). Budget: minimum charge 0.001 USDC; a typical chat call settles for about " +
+        "$0.004. Agents that prefer pay-once: POST /prepaid/codes or /prepaid/codes/auto mints a " +
+        "Bearer key with a token budget, then call /prepaid/v1/* routes with no per-request " +
+        "payment; GET /prepaid/status reports the remaining budget.",
       "x-payment": {
         protocol: "x402",
         network: config.network,
@@ -3087,7 +3249,37 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
         },
       },
     },
-  });
+  };
+
+  // MPP discovery (draft-payment-discovery-01): OpenAPI-first annotation,
+  // no .well-known. Every paid operation already carries x-payment-info;
+  // append MPP `offers` (dynamic amount — the runtime 402 challenge stays
+  // authoritative) for every EVM network we accept, and publish top-level
+  // x-service-info so registry crawlers categorize the service.
+  {
+    const evmOffers = [config.network, ...config.extraNetworks]
+      .filter((net) => net.startsWith("eip155:"))
+      .map((net) => ({
+        intent: "charge",
+        method: "usdc",
+        amount: null,
+        currency: chainInfo(net, config.paymentAssetAddress).assetAddress,
+        description:
+          "Exact price quoted at runtime in the 402 challenge; varies by model and tokens. Minimum charge $" + config.minChargeUsd.toFixed(3) + " USDC.",
+      }));
+    for (const pathItem of Object.values((doc as { paths: Record<string, Record<string, Record<string, unknown>>> }).paths)) {
+      for (const operation of Object.values(pathItem)) {
+        const payInfo = (operation as { ["x-payment-info"]?: Record<string, unknown> })["x-payment-info"];
+        if (payInfo) payInfo.offers = evmOffers;
+      }
+    }
+    (doc as Record<string, unknown>)["x-service-info"] = {
+      categories: ["AI", "inference", "developer-tools", "payments"],
+      docs: `${origin}/AI-AGENTS.md`,
+    };
+  }
+
+  res.json(doc);
 });
 
 app.get("/llms.txt", (req: Request, res: Response) => {
