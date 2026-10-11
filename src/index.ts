@@ -1,5 +1,5 @@
 import express, { type Request, type Response } from "express";
-import { paymentMiddleware, x402ResourceServer } from "@x402/express";
+import { paymentMiddleware, paymentMiddlewareFromHTTPServer, x402HTTPResourceServer, x402ResourceServer } from "@x402/express";
 import { createCdpFacilitatorClient, CDP_FACILITATOR_URL } from "@coinbase/cdp-sdk/x402";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { BatchFacilitatorClient, GatewayEvmScheme } from "@circle-fin/x402-batching/server";
@@ -14,6 +14,13 @@ import {
   InMemorySIWxStorage,
   parseSIWxHeader,
 } from "@x402/extensions/sign-in-with-x";
+import {
+  agentkitResourceServerExtension,
+  createAgentBookVerifier,
+  createAgentkitHooks,
+  declareAgentkitExtension,
+  InMemoryAgentKitStorage,
+} from "@worldcoin/agentkit";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
@@ -207,6 +214,21 @@ resourceServer.registerExtension(
 );
 resourceServer.onAfterSettle(createSIWxSettleHook({ storage: siwxStorage }));
 
+// World AgentKit (proof of personhood): agents backed by a World ID-verified
+// human get a short free trial on chat, then fall through to normal x402
+// payment. In-memory counters (restart resets trials — mild, bounded);
+// the AgentBook lookup itself is a free World Chain RPC read.
+const agentkitHooks = config.worldAgentkit
+  ? createAgentkitHooks({
+      agentBook: createAgentBookVerifier(),
+      storage: new InMemoryAgentKitStorage(),
+      mode: { type: "free-trial", uses: config.worldAgentkitTrialUses },
+    })
+  : null;
+if (agentkitHooks) {
+  resourceServer.registerExtension(agentkitResourceServerExtension);
+}
+
 /** Parsed request body (express.json() runs first, and the paywall needs it to price). */
 function requestBody(context: HTTPRequestContext): Record<string, unknown> {
   const adapter = context.adapter as unknown as {
@@ -240,7 +262,7 @@ const quotedPrice: DynamicPrice = async (context) => {
 };
 
 /**
- * `quote` extension: BlockRun-style transparency in every 402 — the challenge
+ * `quote` extension: full price transparency in every 402 — the challenge
  * carries the counted input tokens, assumed output tokens and total price, and
  * each accepts entry gets a human-readable description with the breakdown.
  */
@@ -429,7 +451,7 @@ function paymentOptions(price: DynamicPrice, upfront: boolean) {
 }
 
 /** Every paid route shares one pricing rule; only the discovery shape differs. */
-function paidRoute(description: string, discovery: ReturnType<typeof declareDiscoveryExtension>, price: DynamicPrice = quotedPrice, includeQuote = true, upfront = false, tags: string[] = [], mimeType = "application/json") {
+function paidRoute(description: string, discovery: ReturnType<typeof declareDiscoveryExtension>, price: DynamicPrice = quotedPrice, includeQuote = true, upfront = false, tags: string[] = [], mimeType = "application/json", extraExtensions: Record<string, unknown> = {}) {
   return {
     accepts: paymentOptions(price, upfront),
     description,
@@ -438,9 +460,18 @@ function paidRoute(description: string, discovery: ReturnType<typeof declareDisc
     // семантика библиотеки ("один settle -> hasPaid навсегда") превратила бы
     // одну оплату в безлимитный доступ к маршруту. Wallet-auth применяем только
     // на auth-only роутах, где доступ и так бесплатен (см. /v1/account/payments).
-    extensions: { ...(includeQuote ? { quote: {} } : {}), ...bazaarCard(discovery, tags) },
+    extensions: { ...(includeQuote ? { quote: {} } : {}), ...bazaarCard(discovery, tags), ...extraExtensions },
   };
 }
+
+/** World AgentKit declaration for the human-backed free trial (empty when disabled). */
+const agentkitTrialExtension = (): Record<string, unknown> =>
+  agentkitHooks
+    ? declareAgentkitExtension({
+        statement: "Agent backed by a World ID-verified human gets a free trial of this endpoint.",
+        mode: { type: "free-trial", uses: config.worldAgentkitTrialUses },
+      })
+    : {};
 
 const CHAT_DESCRIPTION =
   "OpenAI-compatible chat completion, priced by counted input tokens + max output tokens at per-model rates";
@@ -644,8 +675,8 @@ const PAID_ROUTES = {
       output: { example: { object: "nft_contract_metadata", chainNetwork: network, contractAddress: nftExampleAddress, name: "BoredApeYachtClub", symbol: "BAYC", tokenType: "ERC721" } },
     }), async () => nftPrice, false, false, ["NFT", "metadata", "crypto"]),
   ])) : {}),
-  "POST /v1/chat/completions": paidRoute(CHAT_DESCRIPTION, chatDiscovery, quotedPrice, true, false, CHAT_TAGS),
-  "POST /api/v1/chat/completions": paidRoute(CHAT_DESCRIPTION, chatDiscovery, quotedPrice, true, false, CHAT_TAGS),
+  "POST /v1/chat/completions": paidRoute(CHAT_DESCRIPTION, chatDiscovery, quotedPrice, true, false, CHAT_TAGS, "application/json", agentkitTrialExtension()),
+  "POST /api/v1/chat/completions": paidRoute(CHAT_DESCRIPTION, chatDiscovery, quotedPrice, true, false, CHAT_TAGS, "application/json", agentkitTrialExtension()),
   "POST /api/v1/responses": paidRoute(
     "OpenAI-compatible Responses API (alpha), translated to chat completions upstream",
     responsesDiscovery, quotedPrice, true, false, CHAT_TAGS,
@@ -729,7 +760,14 @@ const PAID_ROUTES = {
 };
 
 app.use(paymentRequiredBodyMiddleware({ embeddingsEnabled, freeGptOssEnabled }, originOf, process.env.MPP_SECRET ?? ""));
-app.use(paymentMiddleware(PAID_ROUTES, resourceServer));
+// AgentKit proof arrives in an HTTP header, so the protected-request hook
+// lives on the HTTP wrapper, not the core resource server. Same wire
+// behavior as paymentMiddleware(PAID_ROUTES, resourceServer) otherwise.
+const x402Http = new x402HTTPResourceServer(resourceServer, PAID_ROUTES);
+if (agentkitHooks) {
+  x402Http.onProtectedRequest(agentkitHooks.requestHook as never);
+}
+app.use(paymentMiddlewareFromHTTPServer(x402Http));
 
 // SIWX auth-only account view. The middleware above already verified the
 // SIGN-IN-WITH-X signature; here we only decode it and serve the caller's

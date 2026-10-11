@@ -35,7 +35,6 @@ nexo-probe.mjs
 nexo-rate.mjs
 nexo-ua.mjs
 nexo-vps-test.sh
-blockrun-models.json
 models-after-cooldown.json
 gemini-*.wav
 

@@ -8,7 +8,7 @@
 - **Compatibility**: OpenAI-compatible API
 
 ## Available Models
-Claude lineup (priced at half of BlockRun, USD per 1M in/out tokens):
+Claude lineup (USD per 1M in/out tokens):
 - claude-haiku-4-5 ($0.50/$2.50)
 - claude-sonnet-4-5, claude-sonnet-4-6 ($1.50/$7.50)
 - claude-sonnet-5, claude-sonnet-5-5 ($1/$5)
@@ -98,7 +98,7 @@ No API keys, no subscriptions, no monthly bills.
 ## Key Features
 - **Claude-only focus**: 10 models from Anthropic
 - **Audio**: TTS `POST /v1/audio/speech` ($0.015/req, opus/wav; voices alloy/nova/shimmer) and STT `POST /v1/audio/transcriptions` ($0.006/req, OpenAI-compatible whisper models) — both via x402
-- **BlockRun-competitive pricing**: Starting at $5/1M tokens
+- **Competitive pricing**: Claude models at half the going x402-gateway rates
 - **OpenAI-compatible**: Drop-in replacement for OpenAI SDK
 - **x402 payments**: Pay per request in USDC on Solana
 - **No accounts**: Wallet address is your identity
