@@ -6,15 +6,20 @@
 <title>{{BRAND}} — GPT, Agents, Images, Audio, X Intelligence API with x402 Pay-Per-Request</title>
 <meta name="description" content="{{OG_DESCRIPTION}}">
 <meta name="keywords" content="gpt api, openai api, gpt-5.6, gpt-6, pay per request, x402, usdc payment, {{CHAIN}}, openai compatible, llm api, ai api">
-<link rel="icon" href="/favicon.ico" sizes="any">
-<link rel="apple-touch-icon" href="/favicon.ico">
+<link rel="icon" href="/favicon.ico?v=2" sizes="any">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="/logo.png" sizes="512x512">
 <meta name="theme-color" content="#0F1117">
 <meta property="og:title" content="{{BRAND}} — GPT, Agents, Images, Audio, X Intelligence API with x402 Pay-Per-Request">
 <meta property="og:description" content="{{OG_DESCRIPTION}}">
 <meta property="og:type" content="website">
 <meta property="og:url" content="{{ORIGIN}}/">
 <meta property="og:site_name" content="{{BRAND}}">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="{{ORIGIN}}/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="{{ORIGIN}}/og.jpg">
 <meta name="robots" content="index, follow">
 <meta name="googlebot" content="index, follow">
 <link rel="canonical" href="{{ORIGIN}}/">
@@ -107,6 +112,7 @@ header {
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 620; letter-spacing: -0.01em; font-size: 17px; color: var(--fg); }
 .brand:hover { text-decoration: none; }
 .brand svg { flex: none; }
+.brand img { display: block; border-radius: 8px; }
 nav { margin-left: auto; display: flex; gap: 24px; font-size: 14px; font-weight: 500; }
 nav a { color: var(--fg-muted); }
 nav a:hover { color: var(--accent); text-decoration: none; }
@@ -220,10 +226,7 @@ footer a:hover { color: var(--accent); }
 <header>
   <div class="wrap bar">
     <a class="brand" href="/">
-      <svg width="28" height="28" viewBox="0 0 100 100" fill="none" aria-hidden="true">
-        <circle cx="50" cy="50" r="38" stroke="currentColor" stroke-width="6" fill="none"/>
-        <path d="M30 50 L45 65 L70 35" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-      </svg>
+      <img src="/logo.png" width="30" height="30" alt="" aria-hidden="true">
       <span>{{BRAND}}</span>
     </a>
     <nav>
