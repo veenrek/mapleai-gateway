@@ -74,6 +74,16 @@ export const config = {
    * FACILITATOR_MODE=cdp; Solana/arc-local settlements are untouched.
    */
   circleGateway: process.env.CIRCLE_GATEWAY === "true",
+
+  /**
+   * WORLD_AGENTKIT=true enables World AgentKit proof-of-personhood on the
+   * chat routes: agents whose operator verified a human via World ID and
+   * bound the wallet in AgentBook (World Chain registry) get a free trial
+   * (WORLD_AGENTKIT_TRIAL_USES calls per humanId per endpoint), then pay
+   * normally. EVM-only in SDK 0.2.x; x402 payment stays the always-on fallback.
+   */
+  worldAgentkit: process.env.WORLD_AGENTKIT === "true",
+  worldAgentkitTrialUses: Math.max(1, Number(process.env.WORLD_AGENTKIT_TRIAL_USES ?? 3)),
   /** Required on Robinhood Chain until an official USDC address is confirmed. */
   paymentAssetAddress: process.env.PAYMENT_ASSET_ADDRESS,
 
