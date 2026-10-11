@@ -22,6 +22,7 @@
     .bar { display:flex; align-items:center; gap:14px; height:64px; }
     .brand { display:flex; align-items:center; gap:10px; font-size:17px; font-weight:620; color:var(--fg); }
     .brand svg { flex:none; }
+    .brand img { display:block; border-radius:8px; }
     nav { margin-left:auto; display:flex; flex-wrap:wrap; gap:24px; font-size:14px; font-weight:500; }
     nav a { color:var(--fg-muted); }
     nav a:hover,nav a[aria-current] { color:var(--accent); text-decoration:none; }
@@ -69,8 +70,8 @@
 </head>
 <body>
 <header><div class="wrap bar">
-  <a class="brand" href="/"><svg width="28" height="28" viewBox="0 0 100 100" fill="none" aria-hidden="true"><circle cx="50" cy="50" r="38" stroke="currentColor" stroke-width="6" fill="none"/><path d="M30 50 L45 65 L70 35" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg><span>{{BRAND}}</span></a>
-  <nav aria-label="Main"><a href="/#quickstart">Quickstart</a><a href="/#models">Models</a><a href="/#payment">Payment</a><a href="/v1/models">API</a><a href="/developers" aria-current="page">Developers</a></nav>
+  <a class="brand" href="/"><img src="/logo.png" width="30" height="30" alt="" aria-hidden="true"><span>{{BRAND}}</span></a>
+  <nav aria-label="Main"><a href="/#quickstart">Quickstart</a><a href="/#models">Models</a>{{HOME_IMAGE_NAV}}{{HOME_AUDIO_NAV}}{{HOME_JEV_NAV}}{{HOME_AGENTS_NAV}}{{HOME_PREPAID_NAV}}<a href="/#payment">Payment</a><a href="/v1/models">API</a><a href="/developers" aria-current="page">Developers</a></nav>
 </div></header>
 <main class="wrap">
   <div class="intro">

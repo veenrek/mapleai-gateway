@@ -92,6 +92,7 @@ header {
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 620; letter-spacing: -0.01em; font-size: 17px; color: var(--fg); }
 .brand:hover { text-decoration: none; }
 .brand svg { flex: none; }
+.brand img { display: block; border-radius: 8px; }
 nav { margin-left: auto; display: flex; gap: 24px; font-size: 14px; font-weight: 500; }
 nav a { color: var(--fg-muted); }
 nav a:hover { color: var(--accent); text-decoration: none; }
@@ -181,16 +182,20 @@ footer a:hover { color: var(--accent); }
 <header>
   <div class="wrap bar">
     <a class="brand" href="/">
-      <svg width="28" height="28" viewBox="0 0 100 100" fill="none" aria-hidden="true">
-        <circle cx="50" cy="50" r="38" stroke="currentColor" stroke-width="6" fill="none"/>
-        <path d="M30 50 L45 65 L70 35" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-      </svg>
+      <img src="/logo.png" width="30" height="30" alt="" aria-hidden="true">
       <span>{{BRAND}}</span>
     </a>
     <nav>
+      <a href="/#quickstart">Quickstart</a>
       <a href="/#models">Models</a>
-      <a href="/developers">Developers</a>
+      {{HOME_IMAGE_NAV}}
+      {{HOME_AUDIO_NAV}}
+      {{HOME_JEV_NAV}}
+      {{HOME_AGENTS_NAV}}
+      {{HOME_PREPAID_NAV}}
+      <a href="/#payment">Payment</a>
       <a href="/v1/models">API</a>
+      <a href="/developers">Developers</a>
     </nav>
   </div>
 </header>

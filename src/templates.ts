@@ -210,8 +210,8 @@ export function docVars(origin: string): DocVars {
     MODELS_LIST: modelListMarkdown(),
     MODELS_TABLE: modelTableMarkdown(),
     HOME_IMAGES: homeImagesHtml(origin),
-    HOME_IMAGE_NAV: imagesEnabled ? '<a href="#images">Images</a>' : '',
-    HOME_JEV_NAV: jevEnabled ? '<a href="#jev">Jev</a>' : '',
+    HOME_IMAGE_NAV: imagesEnabled ? '<a href="/#images">Images</a>' : '',
+    HOME_JEV_NAV: jevEnabled ? '<a href="/#jev">Jev</a>' : '',
     HOME_JEV: jevEnabled ? '<section id="jev"><h2>Jev</h2><p class="h2sub">Structured decisions with ' + jevModel +
       ' via SystemOne. $' + jevPricePerMillion?.toFixed(2) + ' per 1M input tokens; output tokens are free.</p><p><code>POST /jev</code> &nbsp; <a href="' +
       origin + '/developers#jev">Jev API guide</a></p></section>' : '',
@@ -234,13 +234,13 @@ export function docVars(origin: string): DocVars {
       'Every audio response carries `x-audio-upstream` (the vendor/model that served) and `x-fallback-used` (1 = a secondary vendor served after the primary failed; for TTS the voice then differs from the primary).\n\n' : '',
     AGENT_AUDIO_ENDPOINTS: (speechEnabled ? '| POST | /v1/audio/speech | Text-to-speech (WAV) |\n' : '') +
       (transcriptionsEnabled ? '| POST | /v1/audio/transcriptions | Speech-to-text |' : ''),
-    HOME_AUDIO_NAV: speechEnabled || transcriptionsEnabled ? '<a href="#audio">Audio</a>' : '',
+    HOME_AUDIO_NAV: speechEnabled || transcriptionsEnabled ? '<a href="/#audio">Audio</a>' : '',
     HOME_AUDIO: speechEnabled || transcriptionsEnabled ? '<section id="audio"><h2>Audio</h2><p class="h2sub">' +
       (speechEnabled ? 'Text-to-speech (' + speechModels.map((m) => '<code>' + m + '</code>').join(', ') + ', $' + speechPriceUsd.toFixed(3) + '/request)' +
         (transcriptionsEnabled ? ' and ' : '') : '') +
       (transcriptionsEnabled ? 'speech-to-text (' + transcriptionModels.map((m) => '<code>' + m + '</code>').join(', ') + ', $' + transcriptionPriceUsd.toFixed(3) + '/request, word timestamps on whisper-large-v3*)' : '') +
       '.</p><p><code>POST /v1/audio/speech</code> &nbsp; <code>POST /v1/audio/transcriptions</code> &nbsp; <a href="' + origin + '/developers#audio">Audio API guide</a></p></section>' : '',
-    DEVELOPER_AUDIO_NAV: speechEnabled || transcriptionsEnabled ? '<a href="#audio">Audio</a>' : '',
+    DEVELOPER_AUDIO_NAV: speechEnabled || transcriptionsEnabled ? '<a href="/#audio">Audio</a>' : '',
     DEVELOPER_AUDIO: speechEnabled || transcriptionsEnabled ? '<section id="audio"><h2>Audio</h2><p class="muted">OpenAI-compatible audio endpoints with x402 USDC payments; flat price per request plus settlement overhead shown in the 402 challenge.</p>' +
       '<dl class="endpoint-list">' +
       (speechEnabled ? '<div><dt>Text-to-speech</dt><dd><code>POST /v1/audio/speech</code> — $' + speechPriceUsd.toFixed(3) + ' / request</dd></div>' : '') +
@@ -269,9 +269,9 @@ export function docVars(origin: string): DocVars {
     AGENT_JEV_ENDPOINT: jevEnabled ? '| POST | /jev | Jev SystemOne decisions |' : '',
     AGENT_AGENTS: agentsExecuteEnabled ? '## Agents\n\n- agents/oss-20b: $0.002 base + $0.001 per step (charged at the max_steps ceiling, default 8), plus settlement overhead. POST ' + origin + '/v1/agents/execute with model, task, optional context, max_steps (1-20) and tools (calculator, fetch_url). The agent reasons step by step, runs allowed tools server-side, and returns the full step trace, fetched sources and token usage.\n\n' : '',
     AGENT_AGENTS_ENDPOINT: agentsExecuteEnabled ? '| POST | /v1/agents/execute | Autonomous agent execution (oss-20b, tools) |' : '',
-    HOME_AGENTS_NAV: agentsExecuteEnabled ? '<a href="#agents">Agents</a>' : '',
+    HOME_AGENTS_NAV: agentsExecuteEnabled ? '<a href="/#agents">Agents</a>' : '',
     HOME_AGENTS: agentsExecuteEnabled ? '<section id="agents"><h2>Agents</h2><p class="h2sub">Autonomous task execution with agents/oss-20b: multi-step reasoning plus calculator and fetch_url tools. $0.002 base + $0.001 per step, charged at the max_steps ceiling.</p><p><code>POST /v1/agents/execute</code> &nbsp; <a href="' + origin + '/developers#agents">Agents API guide</a></p></section>' : '',
-    DEVELOPER_AGENTS_NAV: agentsExecuteEnabled ? '<a href="#agents">Agents</a>' : '',
+    DEVELOPER_AGENTS_NAV: agentsExecuteEnabled ? '<a href="/#agents">Agents</a>' : '',
     DEVELOPER_AGENTS: agentsExecuteEnabled ? '<section id="agents"><h2>Agents</h2><p class="muted">Autonomous task execution via <code>agents/oss-20b</code> (multi-step reasoning with tools). $0.002 base + $0.001 per step, charged at the <code>max_steps</code> ceiling (default 8, maximum 20), plus settlement overhead shown in the 402 challenge. Available tools: <code>calculator</code> (safe arithmetic) and <code>fetch_url</code> (public pages, up to 3 per task).</p>' +
       '<div class="snippet"><div class="snippet-title">Execute a task</div><pre><code>POST ' + origin + '/v1/agents/execute\ncontent-type: application/json\n\n{"model":"agents/oss-20b","task":"What is 12% of 340?","max_steps":6,"tools":["calculator","fetch_url"]}</code></pre></div>' +
       '<p class="muted">The response is an <code>agent.execution</code> object: <code>status</code> (completed | failed | max_steps_exhausted), the full <code>steps</code> trace (thought, tool_call, tool_result), <code>output.result</code> with fetched <code>sources</code>, and per-step plus total token <code>usage</code>.</p></section>' : '',
@@ -283,9 +283,9 @@ export function docVars(origin: string): DocVars {
     AGENT_NFT: nftEnabled ? '## NFT Contract Metadata\n\nGET ' + origin + '/api/v1/{chainNetwork}/nft/getNFTMetadata?contractAddress=0x... costs $0.002 USDC per request via x402. Networks: ' + Object.keys(nftNetworks).join(', ') + '. Returns on-chain name, symbol, contractURI, tokenType and ERC interface support; unsupported fields are null. Does not retrieve wallet holdings or off-chain token metadata.\n\n' : '',
     AGENT_PREPAID: prepaidCodesEnabled ? '## Prepaid API Keys\n\nPOST ' + origin + '/prepaid/codes (x402-paid) issues a prepaid bearer key for one GPT or Claude model with a token budget in 100000-token steps from 100000 to 1000000, priced at the model input rate plus settlement fee. Use the key at https://mapleai.shop/v1 (OpenAI-compatible), or right here on the gateway without x402: POST ' + origin + '/prepaid/v1/chat/completions with the oms_buy_ Bearer key (any /prepaid/v1/* subpath forwards the same way; Jev packs spend at POST ' + origin + '/prepaid/v1/jev, billed input-tokens only). Check usage and status for free: GET ' + origin + '/prepaid/status (or ' + prepaidStatusUrl + ') with the prepaid key as the Bearer token — returns valid, reason and tokens total/used/reserved/remaining.\n\nError recovery: an invalid purchase body is answered with availableModels and their pack prices; a prepaid chat call whose model is outside the key returns 403 with the current allowedModels of that key; an exhausted key returns valid=false with reason. In every case the response names ' + prepaidStatusUrl + ' as the refresh URL before buying a new pack.\n\n' : '',
     AGENT_PREPAID_ENDPOINT: prepaidCodesEnabled ? '| POST | /prepaid/codes | Buy a prepaid API key |\n| POST | /prepaid/v1/chat/completions | Chat with a prepaid key (Bearer oms_buy_, no x402) |\n| POST | /prepaid/v1/jev | Prepaid Jev decisions (input-tokens only) |\n| GET | /prepaid/status | Prepaid key usage and status (free) |' : '',
-    HOME_PREPAID_NAV: prepaidCodesEnabled ? '<a href="#prepaid">Prepaid</a>' : '',
+    HOME_PREPAID_NAV: prepaidCodesEnabled ? '<a href="/#prepaid">Prepaid</a>' : '',
     HOME_PREPAID: prepaidCodesEnabled ? '<section id="prepaid"><h2>Prepaid API keys</h2><p class="h2sub">Token packs for one GPT or Claude model: 0.1M-1M tokens at the model input rate, in 0.1M steps.</p><p><code>POST /prepaid/codes</code> &nbsp; <a href="/developers#prepaid">API guide</a></p></section>' : '',
-    DEVELOPER_PREPAID_NAV: prepaidCodesEnabled ? '<a href="#prepaid">Prepaid</a>' : '',
+    DEVELOPER_PREPAID_NAV: prepaidCodesEnabled ? '<a href="/#prepaid">Prepaid</a>' : '',
     DEVELOPER_PREPAID: prepaidCodesEnabled ? '<section id="prepaid"><h2>Prepaid API keys</h2><p class="muted">Buy a prepaid bearer key for one GPT or Claude model with x402. The budget counts total tokens (input + output) in 100000-token steps from 100000 to 1000000 and is priced at the model input rate, plus the network settlement fee shown in the 402 challenge. The key works at <code>https://mapleai.shop/v1</code> (OpenAI-compatible).</p>' +
       '<div class="table-scroll"><table><thead><tr><th>Model</th><th>0.1M pack</th><th>1M pack</th></tr></thead><tbody>' + prepaidPriceRowsHtml() + '</tbody></table></div>' +
       '<div class="snippet"><div class="snippet-title">Buy a prepaid key</div><pre><code>POST ' + origin + '/prepaid/codes\ncontent-type: application/json\n\n{"model":"openai/gpt-6-luna","tokens":100000}</code></pre></div>' +
@@ -293,7 +293,7 @@ export function docVars(origin: string): DocVars {
       '<div class="snippet"><div class="snippet-title">Spend the key on this gateway (no x402)</div><pre><code>POST ' + origin + '/prepaid/v1/chat/completions\nAuthorization: Bearer oms_buy_...\ncontent-type: application/json\n\n{"model":"openai/gpt-6-luna","messages":[{"role":"user","content":"Hello"}]}</code></pre></div>' +
       '<div class="snippet"><div class="snippet-title">Check key usage and status (free)</div><pre><code>curl ' + prepaidStatusUrl + ' \\\n  -H "Authorization: Bearer oms_buy_..."</code></pre></div>' +
       '<p class="muted">The status check also works same-origin: <code>GET ' + origin + '/prepaid/status</code>. Status returns <code>valid</code>, <code>reason</code> and <code>tokens</code> with total/used/reserved/remaining. An exhausted key answers <code>valid: false, reason: "disabled"</code> — buy a fresh pack to continue.</p></section>' : '',
-    DEVELOPER_JEV_NAV: jevEnabled ? '<a href="#jev">Jev</a>' : '',
+    DEVELOPER_JEV_NAV: jevEnabled ? '<a href="/#jev">Jev</a>' : '',
     DEVELOPER_JEV: jevEnabled ? '<section id="jev"><h2>Jev</h2><p class="muted"><code>' + jevModel +
       '</code> evaluates structured questions through SystemOne. $' + jevPricePerMillion?.toFixed(2) +
       ' per 1M input tokens; output tokens are free. The x402 challenge includes settlement overhead and the exact amount. This model does not support Chat Completions or Responses.</p>' +
