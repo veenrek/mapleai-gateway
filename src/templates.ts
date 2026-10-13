@@ -27,7 +27,7 @@ import {
 } from "./audio.js";
 import { freeGptOssEnabled, freeGptOssModel } from "./free-gptoss.js";
 import { nftEnabled, nftNetworks } from "./nft.js";
-import { prepaidCodesEnabled, prepaidStatusUrl } from "./prepaid-codes.js";
+import { prepaidCodesEnabled, prepaidStatusUrl, lavaCardOffers } from "./prepaid-codes.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_DIR = join(__dirname, "../templates");
@@ -335,4 +335,29 @@ export function render(name: string, vars: DocVars): string {
     }
     return value;
   });
+}
+
+/**
+ * Variables for the card-pack shop front (templates/shop.html) on the
+ * SHOP_HOSTS domains: base doc vars plus the live card pack table and the
+ * "Для агентов" links to the x402 network subdomains.
+ */
+export function shopVars(origin: string): DocVars {
+  const base = docVars(origin);
+  const tierLabel = (tokens: number): string => (tokens >= 1_000_000 ? `${tokens / 1_000_000}M` : `${tokens / 1000}k`);
+  const packs = lavaCardOffers();
+  const rows = packs.map((offer) => {
+    const cells = offer.tiers
+      .map((t) => `<td><button class="buy" data-model="${escapeHtml(offer.model)}" data-tokens="${t.tokens}" data-usd="${t.usd.toFixed(2)}">$${t.usd.toFixed(2)}<span class="tier">${tierLabel(t.tokens)}</span></button></td>`)
+      .join("");
+    return `<tr><th scope="row"><code>${escapeHtml(offer.model)}</code></th>${cells}</tr>`;
+  }).join("\n");
+  return {
+    ...base,
+    SHOP_PACK_ROWS: packs.length > 0 ? rows : "<tr><td colspan=\"4\" class=\"muted\">Паки временно недоступны</td></tr>",
+    SHOP_AGENT_LINKS: config.agentSites
+      .map((s) => `<a class="agent-link" href="${escapeHtml(s.origin)}/">${escapeHtml(s.label)}</a>`)
+      .join(""),
+    SHOP_SUPPORT_EMAIL: escapeHtml(config.contactEmail),
+  };
 }

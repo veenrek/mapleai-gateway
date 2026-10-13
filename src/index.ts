@@ -93,7 +93,31 @@ import {
   toResponsesSse,
   type ResponsesRequestBody,
 } from "./responses.js";
-import { docVars, render } from "./templates.js";
+import { docVars, render, shopVars } from "./templates.js";
+import {
+  createLavaInvoice,
+  getLavaInvoice,
+  lavaCheckoutEnabled,
+  parseLavaWebhookEvent,
+  verifyLavaWebhookHeaders,
+} from "./lava.js";
+import {
+  attachLavaInvoiceId,
+  createLavaOrder,
+  findLavaOrderByContract,
+  findLavaOrderByInvoice,
+  findLavaOrder,
+  updateLavaOrder,
+  type LavaOrder,
+} from "./lava-orders.js";
+import { mailEnabled, sendLavaOrderEmail } from "./mail.js";
+import {
+  issuePrepaidCodeForLavaOrder,
+  lavaCardModels,
+  lavaCardPackPrice,
+  lavaCardPackTiers,
+  lavaMinInvoiceUsd,
+} from "./prepaid-codes.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = join(__dirname, "../public");
@@ -879,6 +903,199 @@ if (prepaidCodesEnabled) app.post("/prepaid/codes", validatePrepaidCodePurchase,
 if (prepaidCodesEnabled) app.post("/prepaid/codes/auto", (req, _res, next) => { req.body = normalizeAutoPurchase(req.body); next(); },
   validatePrepaidCodePurchase, (req, res) => { void handlePrepaidCodePurchase(req, res); });
 
+// ---------------------------------------------------------------------------
+// Lava.top card checkout (mapleai.shop shop front)
+// Card buyers pick a model + 10M/30M/50M pack, the gateway mints a USD
+// invoice and fulfills it on payment.success: prepaid key via the internal
+// issuer, delivered on the success page and by email. x402 routes untouched.
+// ---------------------------------------------------------------------------
+
+const lavaEmailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const lavaTierSet = new Set<number>(lavaCardPackTiers as readonly number[]);
+
+/** Mint the prepaid key for a paid order exactly once, then email it once. */
+async function fulfillLavaOrder(order: LavaOrder, note: string): Promise<LavaOrder> {
+  let current = order;
+  if (!current.code) {
+    const issued = await issuePrepaidCodeForLavaOrder(
+      { model: current.model, tokens: current.tokens },
+      current.contractId ?? current.invoiceId,
+    );
+    const withCode = updateLavaOrder(current.order, { code: issued.code }, note + ":code_issued");
+    if (withCode) current = withCode;
+  }
+  if (!current.emailSent) {
+    try {
+      await sendLavaOrderEmail(current);
+      const sent = updateLavaOrder(current.order, { emailSent: true }, note + ":email_sent");
+      if (sent) current = sent;
+    } catch (error) {
+      console.error("[lava] buyer email failed:", error instanceof Error ? error.message : error);
+    }
+  }
+  return current;
+}
+
+if (lavaCheckoutEnabled) {
+  app.post("/lava/checkout", async (req, res) => {
+    const body = (req.body ?? {}) as { email?: unknown; model?: unknown; tier?: unknown; tokens?: unknown };
+    const email = typeof body.email === "string" ? body.email.trim() : "";
+    const model = typeof body.model === "string" ? body.model.trim() : "";
+    const tier = typeof body.tier === "number" ? body.tier : Number(body.tokens);
+
+    if (!lavaEmailPattern.test(email) || email.length > 254) {
+      res.status(400).json({ error: { type: "invalid_request", message: "Укажите корректный email — на него придёт ключ" } });
+      return;
+    }
+    if (!lavaCardModels.includes(model)) {
+      res.status(400).json({ error: { type: "invalid_request", message: "Модель недоступна для оплаты картой", availableModels: lavaCardModels } });
+      return;
+    }
+    if (!lavaTierSet.has(tier)) {
+      res.status(400).json({ error: { type: "invalid_request", message: "Пак должен быть 10M, 30M или 50M токенов", tiers: lavaCardPackTiers } });
+      return;
+    }
+    const amountUsd = lavaCardPackPrice(model, tier);
+    if (amountUsd < lavaMinInvoiceUsd || amountUsd > 10_000) {
+      res.status(400).json({ error: { type: "invalid_request", message: `Сумма $${amountUsd.toFixed(2)} вне лимитов Lava ($${lavaMinInvoiceUsd}..$10000)` } });
+      return;
+    }
+
+    const origin = originOf(req);
+    const successUrl = config.lavaSuccessUrl || `${origin}/lava/success?order={order}&email=${encodeURIComponent(email)}`;
+    const failureUrl = config.lavaFailureUrl || successUrl;
+    const order = createLavaOrder({ invoiceId: "", email, model, tokens: tier, amountUsd });
+    try {
+      const invoice = await createLavaInvoice({
+        email,
+        amountUsd,
+        successfulUrl: successUrl.replace("{order}", order.order),
+        failureUrl: failureUrl.replace("{order}", order.order),
+      });
+      attachLavaInvoiceId(order.order, invoice.id);
+      if (invoice.contractId) updateLavaOrder(order.order, { contractId: invoice.contractId }, "invoice:contract");
+      res.setHeader("Cache-Control", "no-store");
+      res.status(201).json({
+        object: "lava_checkout",
+        order: order.order,
+        invoiceId: invoice.id,
+        paymentUrl: invoice.paymentUrl,
+        amountUsd,
+        model,
+        tokens: tier,
+      });
+    } catch (error) {
+      console.error("[lava] invoice creation failed:", error instanceof Error ? error.message : error);
+      updateLavaOrder(order.order, { status: "failed" }, "invoice_creation_failed");
+      res.status(503).json({ error: { type: "upstream_error", message: "Платёжный провайдер временно недоступен, попробуйте ещё раз" } });
+    }
+  });
+
+  app.post("/lava/webhook", express.json({ limit: "256kb" }), async (req, res) => {
+    if (!verifyLavaWebhookHeaders((name) => req.get(name))) {
+      res.status(401).json({ error: { type: "unauthorized", message: "bad webhook signature" } });
+      return;
+    }
+    const event = parseLavaWebhookEvent(req.body);
+    const payload = (req.body ?? {}) as { contractId?: unknown; id?: unknown };
+    const invoiceId = typeof payload.id === "string" ? payload.id : "";
+    const order = (event.contractId ? findLavaOrderByContract(event.contractId) : undefined)
+      ?? (invoiceId ? findLavaOrderByInvoice(invoiceId) : undefined);
+    if (!order) {
+      console.warn("[lava] webhook for unknown order:", JSON.stringify({ kind: event.kind, contractId: event.contractId, invoiceId }));
+      res.json({ ok: true, ignored: true });
+      return;
+    }
+    if (event.kind === "success" && order.status !== "paid") {
+      const paid = updateLavaOrder(order.order, { status: "paid", contractId: event.contractId }, "webhook:paid");
+      try {
+        await fulfillLavaOrder(paid ?? order, "webhook");
+      } catch (error) {
+        console.error("[lava] fulfillment failed:", error instanceof Error ? error.message : error);
+        res.status(500).json({ ok: true, retry: true });
+        return;
+      }
+    } else if (event.kind === "failed" && order.status === "created") {
+      updateLavaOrder(order.order, { status: "failed" }, "webhook:failed");
+    }
+    res.json({ ok: true });
+  });
+
+  app.get("/lava/orders/:order", async (req, res) => {
+    const orderId = String(req.params.order ?? "");
+    if (!/^ML-[A-Z0-9]{4,12}$/.test(orderId)) {
+      res.status(400).json({ error: { type: "invalid_request", message: "bad order id" } });
+      return;
+    }
+    const order = findLavaOrder(orderId);
+    if (!order) {
+      res.status(404).json({ error: { type: "not_found", message: "unknown order" } });
+      return;
+    }
+    res.setHeader("Cache-Control", "no-store");
+    // Reconciliation: if the webhook never arrived, ask Lava for the invoice.
+    if (order.status === "created") {
+      try {
+        const invoice = await getLavaInvoice(order.invoiceId);
+        if (invoice?.status === "completed") {
+          const paid = updateLavaOrder(order.order, { status: "paid", contractId: invoice.contractId }, "reconcile:paid");
+          const fulfilled = await fulfillLavaOrder(paid ?? order, "reconcile");
+          res.json(publicLavaOrderView(fulfilled, req));
+          return;
+        }
+        if (invoice && (invoice.status === "failed" || invoice.status === "canceled")) {
+          const failed = updateLavaOrder(order.order, { status: "failed" }, "reconcile:failed");
+          res.json(publicLavaOrderView(failed ?? order, req));
+          return;
+        }
+      } catch (error) {
+        console.error("[lava] reconciliation failed:", error instanceof Error ? error.message : error);
+      }
+    }
+    // Late email retry: paid, but the letter never went out.
+    if (order.status === "paid" && !order.emailSent && mailEnabled) {
+      try {
+        const fulfilled = await fulfillLavaOrder(order, "poll");
+        res.json(publicLavaOrderView(fulfilled, req));
+        return;
+      } catch { /* fall through to the plain view */ }
+    }
+    res.json(publicLavaOrderView(order, req));
+  });
+
+  function publicLavaOrderView(order: LavaOrder, req: Request): Record<string, unknown> {
+    // The bare order id must not reveal the key: the buyer email must match too.
+    const email = typeof req.query.email === "string" ? req.query.email.trim().toLowerCase() : "";
+    const emailOk = email !== "" && email === order.email.toLowerCase();
+    return {
+      object: "lava_order",
+      order: order.order,
+      status: order.status,
+      model: order.model,
+      tokens: order.tokens,
+      amountUsd: order.amountUsd,
+      ...(order.status === "paid" ? { emailDelivered: Boolean(order.emailSent) } : {}),
+      ...(order.status === "paid" && emailOk && order.code ? { code: order.code } : {}),
+      ...(order.status === "paid" && !emailOk ? { codeHint: "add ?email= (buyer email) to reveal the key" } : {}),
+    };
+  }
+}
+
+if (lavaCheckoutEnabled) {
+  app.get(["/lava/success", "/lava/success/"], (req, res) => {
+    try {
+      const vars = shopVars(originOf(req));
+      const orderParam = String(req.query.order ?? "");
+      vars.SHOP_ORDER = /^ML-[A-Z0-9]{4,12}$/.test(orderParam) ? orderParam : "";
+      vars.SHOP_EMAIL_JSON = JSON.stringify(typeof req.query.email === "string" ? req.query.email.slice(0, 254) : "");
+      res.type("html").send(render("shop-success.html", vars));
+    } catch (error) {
+      console.error("[lava] failed to render success page:", error);
+      res.status(500).type("text/plain").send("document unavailable");
+    }
+  });
+}
+
 if (nftEnabled) {
   for (const network of Object.keys(nftNetworks) as NftNetwork[]) {
     app.get("/api/v1/" + network + "/nft/getNFTMetadata", async (req, res) => {
@@ -1607,7 +1824,32 @@ function sendDoc(req: Request, res: Response, template: string, type: string): v
   }
 }
 
-app.get(["/", "/index.html"], (req, res) => sendDoc(req, res, "index.html", "html"));
+/** Shop front is rendered with shop-specific vars (pack table, agent links). */
+function sendShopDoc(req: Request, res: Response, template: string): void {
+  try {
+    res.type("html").send(render(template, shopVars(originOf(req))));
+  } catch (error) {
+    console.error(`[docs] failed to render ${template}:`, error);
+    res.status(500).type("text/plain").send("document unavailable");
+  }
+}
+
+/** Hosts that get the card-pack shop front instead of the x402 landing. */
+const shopHosts = new Set(config.shopHosts);
+
+function isShopHost(req: Request): boolean {
+  if (!lavaCheckoutEnabled || shopHosts.size === 0) return false;
+  const host = (req.get("host") ?? "").toLowerCase().split(":")[0];
+  return shopHosts.has(host);
+}
+
+app.get(["/", "/index.html"], (req, res) => {
+  if (isShopHost(req)) {
+    sendShopDoc(req, res, "shop.html");
+    return;
+  }
+  sendDoc(req, res, "index.html", "html");
+});
 app.get(["/developers", "/developers/"], (req, res) => sendDoc(req, res, "developers.html", "html"));
 app.get(["/free-embeddings", "/free-embeddings/"], (req, res) =>
   sendDoc(req, res, "free-embeddings.html", "html"),

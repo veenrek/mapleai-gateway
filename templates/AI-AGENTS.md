@@ -22,6 +22,13 @@
 {{AGENT_NFT}}
 {{AGENT_PREPAID}}
 
+## Buy with a bank card (mapleai.shop)
+
+Humans can buy 10M/30M/50M-token packs (same oms_buy_ keys, one model each)
+with a bank card at https://mapleai.shop/ — Lava.top checkout, key delivered on
+the success page and by email. Agents keep using x402: these card routes are
+for humans only.
+
 ## Quick Start for AI Agents
 
 The code below shows the request format. A standard OpenAI SDK does not handle x402 payment automatically. Use an x402-aware client to read the 402 challenge, sign it and retry with PAYMENT-SIGNATURE.

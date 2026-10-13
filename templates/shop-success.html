@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{BRAND}} — оплата, заказ {{SHOP_ORDER}}</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="/favicon.ico?v=2" sizes="any">
+<style>
+:root{color-scheme:light dark;--bg:#ffffff;--bg-soft:#f8f9fb;--fg:#0b1220;--fg-muted:#5a6b85;--line:#e2e8f0;--accent:#5B8CFF;--accent-soft:#eff4ff;--ok:#188554;--mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+@media(prefers-color-scheme:dark){:root{--bg:#0F1117;--bg-soft:#171A23;--fg:#e8eef8;--fg-muted:#94a6c0;--line:#2a3142;--accent:#6f9bff;--accent-soft:#1a2540}}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+code{font-family:var(--mono)}
+.wrap{max-width:720px;margin:0 auto;padding:48px 24px 72px}
+h1{font-size:clamp(24px,4vw,36px);letter-spacing:-0.02em;margin:0 0 10px;font-weight:660}
+.lead{color:var(--fg-muted);margin:0 0 26px}
+.code-box{margin-top:20px;border:1px solid color-mix(in srgb,var(--ok) 40%,transparent);background:color-mix(in srgb,var(--ok) 7%,var(--bg));border-radius:10px;padding:18px 20px;display:none}
+.code-box.show{display:block}
+.code-box h2{font-size:15px;color:var(--ok);margin:0 0 10px;font-weight:650}
+.code{font-family:var(--mono);font-size:clamp(15px,2.4vw,19px);font-weight:700;word-break:break-all;background:var(--code-bg);color:#e6edf7;padding:14px 16px;border-radius:8px;user-select:all}
+.copy{margin-top:10px;display:inline-block;background:var(--accent);color:#fff;border:none;cursor:pointer;padding:9px 16px;border-radius:8px;font-size:13px;font-weight:600}
+.howto{margin-top:16px;color:var(--fg-muted);font-size:14px;line-height:1.65}
+.howto code{word-break:break-all}
+.muted{color:var(--fg-muted)}
+.status-warn{color:var(--fg-muted);font-size:14px;margin-top:14px}
+.back{margin-top:26px;display:inline-block;font-size:14px}
+footer{margin-top:40px;padding-top:18px;border-top:1px solid var(--line);color:var(--fg-muted);font-size:13px}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--accent);border-right-color:transparent;border-radius:50%;vertical-align:-2px;animation:spin .8s linear infinite;margin-right:8px}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Статус оплаты</h1>
+  <p class="lead">Заказ <code>{{SHOP_ORDER}}</code></p>
+
+  <div id="pending" class="muted"><span class="spinner"></span> Проверяем оплату…</div>
+
+  <div class="code-box" id="codeBox">
+    <h2>Оплата получена — ваш ключ доступа</h2>
+    <div class="code" id="code"></div>
+    <div style="margin-top:12px"><button class="copy" id="copyBtn">Скопировать ключ</button></div>
+    <p class="howto">
+      API base: <code>https://mapleai.shop/v1</code> (OpenAI-совместимый)<br>
+      Заголовок: <code>Authorization: Bearer &lt;ключ&gt;</code><br>
+      Остаток токенов: <code>https://mapleai.shop/v1/prepaid/status</code>
+    </p>
+    <p class="howto muted">Этот же ключ отправлен на ваш email (<span id="buyerEmail"></span>). Держите его в секрете — он даёт доступ к оплаченному пакету.</p>
+  </div>
+
+  <p class="back"><a href="/">← Вернуться в магазин</a></p>
+  <footer>© {{YEAR}} {{BRAND}} · Поддержка: {{SHOP_SUPPORT_EMAIL}}</footer>
+</div>
+
+<script>
+(function () {
+  var order = "{{SHOP_ORDER}}";
+  var email = {{SHOP_EMAIL_JSON}};
+  var pollTimer = null;
+
+  function poll() {
+    var params = new URLSearchParams({ email: email });
+    fetch("/lava/orders/" + encodeURIComponent(order) + "?" + params.toString(), { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (!data) return;
+        if (data.status === "failed") {
+          clearInterval(pollTimer);
+          document.getElementById("pending").textContent =
+            "Оплата не прошла или была отменена. Средства не списаны — можно попробовать снова: вернуться на витрину.";
+          return;
+        }
+        if (data.status === "paid" && data.code) {
+          clearInterval(pollTimer);
+          document.getElementById("pending").style.display = "none";
+          var box = document.getElementById("codeBox");
+          box.style.display = "block";
+          box.classList.add("show");
+          document.getElementById("code").textContent = data.code;
+          document.getElementById("buyerEmail").textContent = email;
+          document.getElementById("copyBtn").addEventListener("click", function () {
+            navigator.clipboard.writeText(data.code).then(function () {
+              var b = document.getElementById("copyBtn");
+              b.textContent = "Скопировано ✓";
+              setTimeout(function () { b.textContent = "Скопировать ключ"; }, 2500);
+            });
+          });
+          return;
+        }
+        if (data.status === "paid") {
+          document.getElementById("pending").textContent = "Оплата получена, выпускаем ключ…";
+        }
+      })
+      .catch(function () { /* повторим на следующем тике */ });
+  }
+
+  if (order) {
+    poll();
+    pollTimer = setInterval(poll, 5000);
+    setTimeout(function () { clearInterval(pollTimer); }, 10 * 60 * 1000);
+  } else {
+    document.getElementById("pending").textContent =
+      "Заказ не найден в ссылке. Откройте ссылку из письма или вернитесь на витрину.";
+  }
+})();
+</script>
+</body>
+</html>

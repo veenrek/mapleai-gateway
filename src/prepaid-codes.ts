@@ -214,6 +214,35 @@ export async function issuePrepaidCode(
     .update("\0")
     .update(paymentSignature)
     .digest("hex");
+  return mintPrepaidCode(body, idempotencyKey, network);
+}
+
+/**
+ * Card-channel mint for Lava orders: same internal issuer, but the
+ * idempotency key derives from the Lava contractId (duplicate webhooks must
+ * not mint twice) and there is no x402 payment signature to hash.
+ */
+export async function issuePrepaidCodeForLavaOrder(
+  body: { model: string; tokens: number },
+  contractId: string,
+): Promise<{ id: string; code: string; model: string; tokens: number }> {
+  const issuerToken = config.prepaidIssuerToken;
+  if (!prepaidCodesEnabled || !issuerToken) throw new Error("Prepaid code issuer is disabled");
+  const idempotencyKey = createHash("sha256")
+    .update("lava")
+    .update("\0")
+    .update(contractId)
+    .digest("hex");
+  return mintPrepaidCode(body, idempotencyKey, "lava");
+}
+
+async function mintPrepaidCode(
+  body: { model: string; tokens: number },
+  idempotencyKey: string,
+  network: string,
+): Promise<{ id: string; code: string; model: string; tokens: number }> {
+  const issuerToken = config.prepaidIssuerToken;
+  if (!prepaidCodesEnabled || !issuerToken) throw new Error("Prepaid code issuer is disabled");
   const response = await fetch(config.prepaidIssuerUrl, {
     method: "POST",
     headers: {
@@ -242,3 +271,53 @@ export async function issuePrepaidCode(
   }
   return { id: issued.id, code: issued.code, model: body.model, tokens: body.tokens };
 }
+
+// --- Lava card packs (mapleai.shop shop front) ------------------------------
+
+/** Card checkout tiers: token packs sold on the shop front for cards. */
+export const lavaCardPackTiers = [10_000_000, 30_000_000, 50_000_000] as const;
+
+/** Lava USD invoice limits: $5..$10000 per invoice (verified live 2026-10). */
+export const lavaMinInvoiceUsd = 5;
+
+/**
+ * Models sellable in the card channel: full prepaid list minus models whose
+ * cheapest tier would fall below the $5 Lava minimum (gpt-6-luna at $0.07/1M)
+ * and unpriced models (Jev).
+ */
+export const lavaCardModels: string[] = sellablePrepaidModels.filter((m) => {
+  if (m === jevModel) return false;
+  return (lavaCardPackTiers[0] * packInputRate(m)) / 1_000_000 >= 5;
+});
+
+/** Pack price in USD: input rate x tokens, x card markup, rounded to cents. */
+export function lavaCardPackPrice(model: string, tokens: number): number {
+  const raw = ((tokens / 1_000_000) * packInputRate(model) * config.lavaCardMarkup);
+  return Math.round(raw * 100) / 100;
+}
+
+export interface LavaCardOffer {
+  model: string;
+  tiers: { tokens: number; usd: number }[];
+}
+
+/** Card-channel catalog for the shop front: sellable models x fixed tiers. */
+export function lavaCardOffers(): { model: string; tiers: { tokens: number; usd: number }[] }[] {
+  return (sellablePrepaidModels as readonly string[])
+    .filter((m) => lavaCardModelsSet.has(m))
+    .map((model) => ({
+      model,
+      tiers: lavaCardPackTiers.map((tokens) => ({
+        tokens,
+        usd: lavaCardPackPrice(model, tokens),
+      })),
+    }));
+}
+
+const lavaCardModelsSet: ReadonlySet<string> = new Set(
+  sellablePrepaidModels.filter((m) => {
+    if (m === jevModel) return false;
+    const rate = packInputRate(m);
+    return rate > 0 && (lavaCardPackTiers[0] * rate) / 1_000_000 >= 5;
+  }),
+);

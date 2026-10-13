@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{BRAND}} — prepaid-ключи GPT и Claude за банковскую карту</title>
+<meta name="description" content="Купить prepaid API-ключ {{BRAND}} за банковскую карту: паки 10M/30M/50M input-токенов для GPT и Claude.">
+<meta property="og:title" content="{{BRAND}} — prepaid-ключи за карту">
+<meta property="og:description" content="Паки 10M/30M/50M токенов. Оплата картой, ключ на email и на экране сразу после оплаты.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="{{ORIGIN}}/">
+<meta property="og:site_name" content="{{BRAND}}">
+<meta property="og:image" content="{{ORIGIN}}/og.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="{{ORIGIN}}/">
+<style>
+:root{color-scheme:light dark;--bg:#ffffff;--bg-soft:#f8f9fb;--fg:#0b1220;--fg-muted:#5a6b85;--line:#e2e8f0;--accent:#5B8CFF;--accent-soft:#eff4ff;--mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+@media(prefers-color-scheme:dark){:root{--bg:#0F1117;--bg-soft:#171A23;--fg:#e8eef8;--fg-muted:#94a6c0;--line:#2a3142;--accent:#6f9bff;--accent-soft:#1a2540}}
+*{box-sizing:border-box;margin:0}html{-webkit-text-size-adjust:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+.wrap{max-width:980px;margin:0 auto;padding:0 24px}
+header{border-bottom:1px solid var(--line);position:sticky;top:0;background:color-mix(in srgb,var(--bg) 90%,transparent);backdrop-filter:blur(10px);z-index:10}
+.bar{display:flex;align-items:center;gap:14px;height:64px;flex-wrap:wrap}
+.brand{font-weight:620;font-size:17px;color:var(--fg)}
+nav{margin-left:auto;display:flex;gap:18px;font-size:14px;font-weight:500;align-items:center;flex-wrap:wrap}
+nav a{color:var(--fg-muted)}nav a:hover{color:var(--accent);text-decoration:none}
+.agent-links{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.agent-link::before{content:"◆ ";color:var(--accent);font-size:10px;vertical-align:1px}
+.hero{padding:64px 0 40px}
+h1{font-size:clamp(28px,5vw,44px);line-height:1.12;letter-spacing:-0.03em;margin:0 0 14px;font-weight:660}
+.lede{font-size:clamp(15px,2vw,18px);color:var(--fg-muted);max-width:60ch;margin:0 0 22px}
+.badge{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:4px 11px;font-size:12px;color:var(--fg-muted);background:var(--bg-soft);margin:0 6px 6px 0}
+section{padding:32px 0;border-top:1px solid var(--line)}
+h2{font-size:24px;letter-spacing:-0.02em;margin:0 0 12px;font-weight:650}
+.lead{color:var(--fg-muted);max-width:60ch;margin:0 0 18px}
+.table-scroll{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+table.packs{width:100%;border-collapse:collapse;font-size:15px}
+table.packs th,table.packs td{padding:11px 13px;border-bottom:1px solid var(--line);vertical-align:middle}
+table.packs thead th{background:var(--bg-soft);color:var(--fg-muted);font-size:12px;text-transform:uppercase;letter-spacing:0.05em}
+table.packs tbody tr:last-child th,table.packs tbody tr:last-child td{border-bottom:0}
+table.packs tbody th{font-weight:500;white-space:nowrap}
+.buy{display:inline-flex;flex-direction:column;align-items:center;gap:1px;cursor:pointer;text-align:center;background:var(--accent-soft);color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 35%,transparent);border-radius:8px;padding:7px 12px;min-width:90px;font:inherit;transition:box-shadow .15s ease}
+.buy:hover{box-shadow:0 2px 10px color-mix(in srgb,var(--accent) 25%,transparent);text-decoration:none}
+.buy .tier{font-size:11px;color:var(--fg-muted)}
+.order-box{border:1px solid var(--line);border-radius:10px;background:var(--bg-soft);padding:16px 18px;margin-top:16px;display:none}
+.order-box.open{display:block}
+.order-box label{display:block;font-size:13px;color:var(--fg-muted);margin:0 0 5px}
+.order-box input[type=email]{width:100%;max-width:360px;padding:10px 11px;font-size:15px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)}
+.order-box .actions{margin-top:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.order-box .total{font-size:13px;color:var(--fg-muted)}
+.primary{display:inline-block;background:var(--accent);color:#fff;border:none;cursor:pointer;padding:11px 20px;border-radius:8px;font-size:14px;font-weight:600}
+.primary:hover{text-decoration:none;filter:brightness(1.06)}
+.primary[disabled]{opacity:.55;cursor:wait}
+.status{font-size:14px;color:var(--fg-muted);min-height:1.4em;margin-top:8px}
+.status.err{color:#c0392b}
+.muted{color:var(--fg-muted)}
+.faq dt{font-weight:600;margin-top:13px}
+.faq dd{color:var(--fg-muted);margin:3px 0 0}
+footer{border-top:1px solid var(--line);padding:26px 0 42px;color:var(--fg-muted);font-size:13px}
+footer .wrap{display:flex;gap:16px;flex-wrap:wrap;justify-content:space-between}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap bar">
+    <a class="brand" href="/">{{BRAND}}</a>
+    <nav>
+      <a href="#packs">Паки</a>
+      <a href="#faq">FAQ</a>
+      <span class="agent-links">{{SHOP_AGENT_LINKS}}</span>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <section class="hero">
+    <h1>Купить токены&nbsp;GPT и Claude за карту</h1>
+    <p class="lede">Пакеты от 10 до 50 миллионов input-токенов. Оплата банковской картой — ключ сразу на экране и на email.</p>
+    <span class="badge">Visa / Mastercard</span>
+    <span class="badge">Без подписки</span>
+    <span class="badge">Ключ — сразу после оплаты</span>
+  </section>
+
+  <section id="packs">
+    <h2>Тарифы</h2>
+    <p class="lead">Выберите модель и нажмите нужный пакет — откроется форма оплаты.</p>
+    <div class="table-scroll">
+      <table class="packs">
+        <thead>
+          <tr><th>Модель</th><th>10M токенов</th><th>30M токенов</th><th>50M токенов</th></tr>
+        </thead>
+        <tbody>
+          {{SHOP_PACK_ROWS}}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="order-box" id="orderBox">
+      <label for="buyerEmail">Ваш email — на него придёт ключ:</label>
+      <input type="email" id="buyerEmail" placeholder="name@example.com" autocomplete="email" maxlength="254">
+      <div class="actions">
+        <button class="primary" id="payBtn" disabled>Оплатить — $<span id="payAmount">—</span></button>
+        <span class="total">Пак: <b id="payDesc">—</b></span>
+      </div>
+      <div class="status" id="orderStatus"></div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <h2>Частые вопросы</h2>
+    <dl class="faq">
+      <dt>Куда приходит ключ?</dt>
+      <dd>Сразу после оплаты — на эту страницу (сохраните её) и на указанный email. Если письмо не пришло, проверьте спам или откройте страницу заказа ещё раз.</dd>
+      <dt>На что тратятся токены?</dt>
+      <dd>Пак покрывает input-токены выбранной модели. Ключ работает в OpenAI-совместимом API {{BRAND}}: base <code>https://mapleai.shop/v1</code>, авторизация <code>Bearer oms_buy_…</code>.</dd>
+      <dt>Ключ привязан к одной модели?</dt>
+      <dd>Да, пак выпускается под одну модель. Остаток виден на <code>https://mapleai.shop/v1/prepaid/status</code> с вашим ключом в заголовке <code>Authorization</code>.</dd>
+      <dt>Как оплатить без карты?</dt>
+      <dd>Агентские каналы принимают USDC (x402) — см. ссылки «Для агентов» в шапке: там паки от 0.1M и микроплатежи за запрос.</dd>
+      <dt>Оплата прошла, а ключа нет?</dt>
+      <dd>Страница после оплаты сама добирает статус заказа. Если письмо не пришло в течение пары минут — напишите на {{SHOP_SUPPORT_EMAIL}} с номером заказа ML-XXXXXX.</dd>
+    </dl>
+  </section>
+</div>
+
+<footer>
+  <div class="wrap">
+    <span>© {{YEAR}} {{BRAND}} · Поддержка: {{SHOP_SUPPORT_EMAIL}}</span>
+    <span>Для агентов: <span class="agent-links">{{SHOP_AGENT_LINKS}}</span></span>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var selected = null;
+  var box = document.getElementById("orderBox");
+  var emailInput = document.getElementById("buyerEmail");
+  var payBtn = document.getElementById("payBtn");
+  var payAmount = document.getElementById("payAmount");
+  var payDesc = document.getElementById("payDesc");
+  var statusEl = document.getElementById("orderStatus");
+
+  function setStatus(text, isError) {
+    statusEl.textContent = text || "";
+    statusEl.className = "status" + (text && statusEl.dataset.err === "1" ? " err" : "");
+  }
+
+  document.querySelectorAll("button.buy").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll("button.buy.selected").forEach(function (other) { other.classList.remove("selected"); });
+      btn.classList.add("selected");
+      box.classList.add("open");
+      payBtn.dataset.model = btn.dataset.model;
+      payBtn.dataset.tokens = btn.dataset.tokens;
+      payBtn.dataset.usd = btn.dataset.usd;
+      payAmount.textContent = btn.dataset.usd;
+      payDesc.textContent = btn.dataset.model + " · " + (parseInt(btn.dataset.tokens, 10) / 1e6) + "M";
+      statusEl.textContent = "";
+      statusEl.classList.remove("err");
+      payBtn.disabled = false;
+      box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      emailInput.focus();
+    });
+  });
+
+  function emailOk() {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(emailInput.value.trim());
+  }
+  emailInput.addEventListener("input", function () {
+    var selected = document.querySelector("button.buy.selected");
+    payBtn.disabled = !selected || !emailInput.value.trim();
+  });
+
+  payBtn.addEventListener("click", function () {
+    var btn = document.querySelector("button.buy.selected");
+    if (!btn) return;
+    var email = emailInput.value.trim();
+    if (!email || email.indexOf("@") < 1) {
+      statusEl.textContent = "Укажите корректный email — на него придёт ключ.";
+      statusEl.classList.add("err");
+      return;
+    }
+    statusEl.classList.remove("err");
+    statusEl.textContent = "Создаём счёт…";
+    payBtn.disabled = true;
+    fetch("/lava/checkout", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: emailInput.value.trim(), model: btn.dataset.model, tier: parseInt(btn.dataset.tokens, 10) }),
+    }).then(function (r) {
+      return r.json().then(function (data) { return { ok: r.ok, data: data }; });
+    }).then(function (out) {
+      if (out.ok && out.data.paymentUrl) {
+        statusEl.textContent = "Переходим к оплате…";
+        window.location.href = out.data.paymentUrl;
+      } else {
+        statusEl.textContent = (out.data && out.data.error && out.data.error.message) || "Не удалось создать счёт. Попробуйте ещё раз.";
+        statusEl.classList.add("err");
+        payBtn.disabled = false;
+      }
+    }).catch(function () {
+      statusEl.textContent = "Сеть недоступна. Попробуйте ещё раз.";
+      statusEl.classList.add("err");
+      payBtn.disabled = false;
+    });
+  });
+})();
+</script>
+</body>
+</html>

@@ -197,6 +197,21 @@ curl https://mapleai.shop/v1/prepaid/status \
   -H "Authorization: Bearer oms_buy_..."
 ```
 
+```bash
+curl https://mapleai.shop/v1/prepaid/status \
+  -H "Authorization: Bearer oms_buy_..."
+```
+
+### Card checkout for humans (mapleai.shop)
+
+The main domain `https://mapleai.shop/` serves a Russian shop front selling
+fixed **10M / 30M / 50M** packs for bank cards through Lava.top (`POST
+/lava/checkout` → Lava payment page → `POST /lava/webhook` fulfills the
+order). The key shows up on the `/lava/success` page and goes to the buyer's
+email (Brevo SMTP). Models whose cheapest tier is under Lava's $5 invoice
+minimum (e.g. `openai/gpt-6-luna`) are excluded from the card channel. The
+agent routes above are untouched — x402 stays on the network subdomains.
+
 ## Discovery
 
 - `GET /v1/models` — free model catalog with live pricing
@@ -226,5 +241,7 @@ npm start              # listens on PORT (default 4021)
 
 Required env: `UPSTREAM_API_KEY`, `PAY_TO`, `MODEL_PRICES`, `MODEL_MAPPING`.
 Optional features are enabled by their own keys (`IMAGE_UPSTREAM_API_KEY`,
-`NVIDIA_API_KEY`, `JEV_UPSTREAM_API_KEY`, `PREPAID_ISSUER_TOKEN`, …) — see
-[`.env.example`](.env.example) for the full list.
+`NVIDIA_API_KEY`, `JEV_UPSTREAM_API_KEY`, `PREPAID_ISSUER_TOKEN`,
+`LAVA_API_KEY`/`LAVA_OFFER_ID`/`LAVA_WEBHOOK_SECRET` for the card shop,
+`SMTP_*`/`MAIL_FROM` for order mail, …) — see [`.env.example`](.env.example)
+for the full list.

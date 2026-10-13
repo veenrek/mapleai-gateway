@@ -180,4 +180,49 @@ export const config = {
    * behind a reverse proxy; set it explicitly to pin canonical URLs.
    */
   publicBaseUrl: (process.env.PUBLIC_BASE_URL ?? "").replace(/\/$/, ""),
+
+  // --- Lava.top card checkout (mapleai.shop shop front) -----------------------
+  /** Lava merchant API key (dashboard → API). Missing = card checkout disabled. */
+  lavaApiKey: process.env.LAVA_API_KEY ?? "",
+  /** Lava gate origin (staging: https://gate.prod.lava.top). */
+  lavaGateUrl: (process.env.LAVA_GATE_URL ?? "https://gate.lava.top").replace(/\/$/, ""),
+  /** Offer with the "dynamic price" flag in the Lava dashboard. */
+  lavaOfferId: process.env.LAVA_OFFER_ID ?? "",
+  /** Secret Lava sends to authorize webhook calls (authType api_key/basic). */
+  lavaWebhookSecret: process.env.LAVA_WEBHOOK_SECRET ?? "",
+  /** Multiplier over the input-rate pack price covering card fees (1 = none). */
+  lavaCardMarkup: Number(process.env.LAVA_CARD_MARKUP ?? 1),
+  /** Card checkout currencies Lava accepts for the offer (USD verified live). */
+  lavaCurrency: process.env.LAVA_CURRENCY ?? "USD",
+  lavaPaymentProvider: process.env.LAVA_PAYMENT_PROVIDER ?? "UNLIMINT",
+  lavaPaymentMethod: process.env.LAVA_PAYMENT_METHOD ?? "CARD",
+  /** Optional overrides; default is the gateway's own /lava/success page ({order} placeholder). */
+  lavaSuccessUrl: (process.env.LAVA_SUCCESS_URL ?? "").trim(),
+  lavaFailureUrl: process.env.LAVA_FAILURE_URL ?? "",
+
+  /** Card-pack shop is served on these hosts (comma-separated, e.g. "mapleai.shop,www.mapleai.shop"). */
+  shopHosts: (process.env.SHOP_HOSTS ?? "mapleai.shop")
+    .split(",")
+    .map((h) => h.trim().toLowerCase())
+    .filter((h) => h.length > 0),
+
+  /** "Label=https://origin" pairs shown under "Для агентов" in the shop menu. */
+  agentSites: (process.env.AGENT_SITES ?? "Solana=https://sol.mapleai.shop,Base=https://base.mapleai.shop,Polygon=https://polygon.mapleai.shop,Arc=https://arc.mapleai.shop")
+    .split(",")
+    .map((pair) => {
+      const eq = pair.indexOf("=");
+      if (eq <= 0) return null;
+      const label = pair.slice(0, eq).trim();
+      const origin = pair.slice(eq + 1).trim().replace(/\/$/, "");
+      return label && /^https:\/\//.test(origin) ? { label, origin } : null;
+    })
+    .filter((s): s is { label: string; origin: string } => s !== null),
+
+  // --- Brevo SMTP (order + prepaid key delivery mail) -------------------------
+  smtpHost: process.env.SMTP_HOST ?? "",
+  smtpPort: Number(process.env.SMTP_PORT ?? 587),
+  smtpUser: process.env.SMTP_USER ?? "",
+  smtpPass: process.env.SMTP_PASS ?? "",
+  /** From header, must be a sender verified in Brevo (e.g. contact@mapleai.shop). */
+  mailFrom: process.env.MAIL_FROM ?? "",
 };
