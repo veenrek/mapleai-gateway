@@ -250,7 +250,10 @@ const agentkitHooks = config.worldAgentkit
     })
   : null;
 if (agentkitHooks) {
-  resourceServer.registerExtension(agentkitResourceServerExtension);
+  resourceServer.registerExtension({
+    ...agentkitResourceServerExtension,
+    dynamicInfoFields: ["nonce", "issuedAt", "expirationTime"],
+  });
 }
 
 /** Parsed request body (express.json() runs first, and the paywall needs it to price). */
