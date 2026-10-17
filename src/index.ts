@@ -2123,6 +2123,102 @@ app.get("/.well-known/x402", (req: Request, res: Response) => {
 });
 
 /**
+ * Machine-readable rate card for /v1/x402/info discovery probes (treg and
+ * other agent catalogs): stable JSON with per-model rates, per-endpoint
+ * billing formulas and prepaid pack pricing, no x402 challenge required.
+ * Prices mirror /v1/models and .well-known/x402 from the same live catalog.
+ */
+app.get("/v1/x402/info", async (req: Request, res: Response) => {
+  const origin = originOf(req);
+  let overhead: number | null;
+  try {
+    overhead = await paymentOverheadUsd();
+  } catch {
+    overhead = null; // keep serving the card even when the gas quote is down
+  }
+
+  res.json({
+    service: config.serviceName,
+    summary: CATALOG_SUMMARY(),
+    contact: config.contactEmail,
+    payment: {
+      protocol: "x402",
+      network: config.network,
+      networkName: chain.networkName,
+      asset: chain.asset,
+      assetAddress: chain.assetAddress,
+      payTo: config.payTo,
+      facilitator: config.facilitatorMode === "cdp" ? CDP_FACILITATOR_URL : config.facilitatorUrl,
+      minimumChargeUsd: config.minChargeUsd,
+      ...(overhead !== null ? { settlementOverheadUsd: overhead } : {}),
+    },
+    rateCard: {
+      currency: "USD",
+      tokenModels: catalog().map((m) => ({
+        id: m.id,
+        inputUsdPer1MTokens: m.pricing.input,
+        outputUsdPer1MTokens: m.pricing.output,
+        contextWindow: m.contextWindow,
+        maxOutput: m.maxOutput,
+      })),
+      imageModels: imagesEnabled
+        ? imageModels.map((id) => ({ id, sizes: imageRates[id], unit: "USD per image" }))
+        : [],
+      ...(speechEnabled
+        ? { audioTts: speechModels.map((id) => ({ id, perRequestUsd: speechPriceUsd })) }
+        : {}),
+      ...(transcriptionsEnabled
+        ? { audioStt: transcriptionModels.map((id) => ({ id, perRequestUsd: transcriptionPriceUsd })) }
+        : {}),
+      ...(jevEnabled && jevPricePerMillion !== undefined
+        ? { jev: { model: jevModel, inputUsdPer1MTokens: jevPricePerMillion, outputUsdPer1MTokens: 0 } }
+        : {}),
+      free: [
+        ...(embeddingsEnabled ? [{ endpoint: "/v1/embeddings", model: embeddingModel }] : []),
+        ...(freeGptOssEnabled ? [{ endpoint: "/v1/free/chat/completions", model: freeGptOssModel }] : []),
+      ],
+    },
+    billingRules: {
+      chat: "input_tokens * input_usd_per_1M + max_tokens * output_usd_per_1M + settlement_overhead_usd, floored at minimum_charge_usd",
+      responses: "input_tokens * input_usd_per_1M + max_output_tokens * output_usd_per_1M + settlement_overhead_usd, floored at minimum_charge_usd",
+      messages: "input tokens (incl. system) + max_tokens output at per-model rates + settlement_overhead_usd, floored at minimum_charge_usd",
+      jev_x402: "o200k_base tokens over JSON.stringify({state, questions}) * input_usd_per_1M / 1_000_000 + settlement_overhead_usd, floored at minimum_charge_usd; output is free",
+      jev_prepaid: "charged_tokens = max(1, ceil(UTF-8 length of JSON.stringify(request_body) / 4)) + 32 debited from the key budget on success; output is free; failed upstream calls debit nothing (worked example: 141-char body -> 36 + 32 = 68 tokens)",
+      prepaid_chat: "actual usage (prompt_tokens + completion_tokens) debited from the key budget; failed upstream calls release the hold",
+      images: "per image by model and size, quoted before generation",
+      audio: "per request",
+      minimumChargeUsd: config.minChargeUsd,
+      failurePolicy: "x402 settles only after a 2xx upstream response; prepaid holds are released when the upstream call fails",
+    },
+    ...(prepaidCodesEnabled
+      ? {
+          prepaid: {
+            statusUrl: prepaidStatusUrl,
+            apiBase: prepaidApiBaseUrl,
+            buyEndpoints: ["POST /prepaid/codes", "POST /prepaid/codes/auto"],
+            spendEndpoints: ["/prepaid/v1/chat/completions", "/prepaid/v1/jev"],
+            offers: prepaidModelOffers().map((o) => ({
+              model: o.model,
+              inputUsdPer1MTokens: o.inputUsdPerMillion,
+              packs: o.packPricesUsd,
+            })),
+          },
+        }
+      : {}),
+    links: {
+      openapi: `${origin}/openapi.json`,
+      wellKnownX402: `${origin}/.well-known/x402`,
+      agentCard: `${origin}/.well-known/agent-card.json`,
+      llms: `${origin}/llms.txt`,
+      agents: `${origin}/AI-AGENTS.md`,
+      models: `${origin}/v1/models`,
+      serviceEndpoints: `${origin}/service-endpoints.json`,
+      ...(prepaidCodesEnabled ? { prepaidStatus: prepaidStatusUrl } : {}),
+    },
+  });
+});
+
+/**
  * A2A agent card: enumerates skills for agent-to-agent discovery. The service
  * itself speaks OpenAI-compatible HTTP paid with x402 — no A2A JSON-RPC task
  * transport is claimed, skills point at HTTP additionalInterfaces instead.
@@ -2934,7 +3030,7 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
         email: config.contactEmail,
         url: origin,
       },
-      license: { name: "Proprietary" },
+      license: { name: "Proprietary", identifier: "LicenseRef-Proprietary" },
       "x-guidance":
         "Agent guidance. What this is: pay-per-request LLM inference; every call is paid with " +
         "USDC exactly once, no account, no API key. How to pay: POST any paid endpoint without " +
@@ -3111,7 +3207,7 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
             summary: "Chat completion with a prepaid key (no x402)",
             operationId: "prepaidChatCompletion",
             // Not an x402-paid route: prepaid Bearer only, excluded from x402 probing.
-            security: [],
+            security: [{ prepaidBearer: [] }],
             description:
               "Spend a prepaid buyer key: same OpenAI-compatible body as /v1/chat/completions, " +
               "authorized with Authorization: Bearer oms_buy_... instead of an x402 payment. " +
@@ -3133,7 +3229,7 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
               summary: "Jev structured decisions with a prepaid key (no x402)",
               operationId: "prepaidJevDecision",
               // Not an x402-paid route: prepaid Bearer only, excluded from x402 probing.
-              security: [],
+              security: [{ prepaidBearer: [] }],
               description:
                 "Spend a prepaid buyer key on Jev structured decisions: same body as /jev " +
                 "(model jev-latest with state and named questions). Debits INPUT tokens only — " +
@@ -3157,7 +3253,7 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
             summary: "Prepaid key usage and status (free)",
             operationId: "prepaidKeyStatus",
             // Free status check for the key holder; excluded from x402 probing.
-            security: [],
+            security: [{ prepaidBearer: [] }],
             description:
               "Self-service status for a prepaid buyer key. The key itself is the Bearer credential. " +
               "Returns valid, reason and tokens total/used/reserved/remaining; exhausted or disabled " +
@@ -3520,6 +3616,21 @@ app.get("/openapi.json", async (req: Request, res: Response) => {
           operationId: "x402Discovery",
           security: [],
           responses: { "200": { description: "x402 discovery document" } },
+        },
+      },
+      "/v1/x402/info": {
+        get: {
+          summary: "Rate card and billing rules",
+          description:
+            "Free. Stable machine-readable rate card for agent catalogs: service and contact " +
+            "info, x402 payment parameters (network, USDC asset, payTo, facilitator), per-model " +
+            "input/output rates, per-endpoint billing formulas (including the deterministic " +
+            "prepaid Jev rule: charged_tokens = max(1, ceil(bodyBytes / 4)) + 32, output free, " +
+            "zero debit on upstream failure) and prepaid pack pricing. No x402 challenge.",
+          operationId: "x402RateCard",
+          security: [],
+          "x-worked-example": workedExample("GET", "/v1/x402/info", undefined, false),
+          responses: { "200": { description: "Rate card with payment, rateCard, billingRules, prepaid and links sections" } },
         },
       },
       "/health": {
