@@ -1,4 +1,5 @@
 # MapleAI — GPT, Claude and Agent APIs with x402 Pay-Per-Request
+[![graded](https://graded.sh/badge/bz_df358223a287.svg)](https://graded.sh/s/bz_df358223a287)
 
 OpenAI-compatible GPT and Anthropic-native Claude chat, multi-step agent
 execution, image, audio, X (Twitter) intel, embeddings and structured-decision
